@@ -8,6 +8,7 @@ A newbie-friendly tour of LangChain, built one file at a time. Each step adds ex
 |---|---|---|
 | `hello.py` | Model wrapper — the lowest level | 1 |
 | `chain.py` | LCEL composition — `prompt \| model \| parser` | 1 |
+| `parallel.py` | LCEL fan-out — run several chains concurrently | N (in parallel) |
 | `agent.py` | Tool-calling loop — model decides what to do | N (≥ 2) |
 
 ---
@@ -479,6 +480,148 @@ What it *can* do is **emit JSON saying "I'd like `add` called with `{a: 47, b: 1
 
 ---
 
+## Step 4 — `parallel.py`: parallel chains (LCEL fan-out)
+
+So far each chain has been a straight line: `prompt | model | parser`. Now we **branch out**: run several chains *at the same time* against the same input, then collect their results into one dict.
+
+This is the second LCEL primitive (after the `|` pipe): **`RunnableParallel`**.
+
+### The shape
+
+```
+                    ┌─► eli5_chain    ── "Explain like I'm 5"
+input: {topic: X}  ─┼─► senior_chain  ── "Explain to a senior engineer"
+                    └─► haiku_chain   ── "Write a haiku"
+                                                    │
+                                                    ▼
+                {"eli5": "...", "senior": "...", "haiku": "..."}
+```
+
+Three branches, one input dict, one merged output dict. Each branch is a normal LCEL chain — they're not aware they're running in parallel.
+
+### Code (the heart of `parallel.py`)
+
+```python
+from langchain_core.runnables import RunnableParallel
+
+def make_chain(template):
+    prompt = ChatPromptTemplate.from_messages([("human", template)])
+    return prompt | model | parser
+
+eli5_chain   = make_chain("Explain {topic} like I'm 5...")
+senior_chain = make_chain("Explain {topic} to a senior engineer...")
+haiku_chain  = make_chain("Write a haiku about {topic}...")
+
+parallel = RunnableParallel(
+    eli5=eli5_chain,
+    senior=senior_chain,
+    haiku=haiku_chain,
+)
+
+result = parallel.invoke({"topic": "prompt caching"})
+# {"eli5": "...", "senior": "...", "haiku": "..."}
+```
+
+### Run it
+
+```bash
+python parallel.py
+```
+
+The file times both a sequential run (each chain in turn) and a parallel run (all at once), so you can see the speedup directly.
+
+### Real numbers from a sample run
+
+```
+SEQUENTIAL:
+  eli5:    3.94s
+  senior:  6.40s
+  haiku:   1.29s
+  TOTAL:  11.63s        ← sum of branches
+
+PARALLEL:
+  TOTAL:   6.59s        ← max of branches
+  Speedup: 1.77×
+```
+
+**Wall-clock time = the slowest branch**, not the sum. That's the whole point.
+
+### Why is the speedup 1.77× and not 3×?
+
+Three reasons, in order of impact:
+
+1. **Branches finish at different times.** The haiku branch finished in 1.3s and then sat idle waiting for `senior` to finish. Parallelism is bounded by your *slowest* branch.
+2. **Coordination overhead.** `RunnableParallel` wraps each branch in a thread (sync mode) or task (async mode). Small fixed cost.
+3. **Server-side variance.** Three concurrent requests to Anthropic land on different GPU pods; under load some serialize.
+
+To get closer to 3×: make the branches **similar in size**, run them **async**, and use a model with consistent latency.
+
+### Two equivalent forms
+
+`RunnableParallel(eli5=..., senior=...)` and the dict-literal `{"eli5": ..., "senior": ...}` produce the same thing. LCEL automatically wraps a plain dict into a `RunnableParallel` when it's piped into the next runnable:
+
+```python
+# These two are equivalent:
+parallel = RunnableParallel(eli5=eli5_chain, senior=senior_chain, haiku=haiku_chain)
+
+parallel = {"eli5": eli5_chain, "senior": senior_chain, "haiku": haiku_chain}
+chain = parallel | next_step   # dict gets auto-promoted to RunnableParallel here
+```
+
+The dict-literal form is the idiomatic one in production code. Use whichever reads more clearly.
+
+### The async path is faster
+
+LLM calls are I/O-bound (waiting for the network), not CPU-bound. For I/O-bound parallelism, **async beats threads** — no thread-pool overhead, just `asyncio.gather()`:
+
+```python
+result = await parallel.ainvoke({"topic": "prompt caching"})
+```
+
+If you're inside FastAPI, Quart, or any async runtime, use `.ainvoke()`. The sync `.invoke()` runs branches in a `concurrent.futures.ThreadPoolExecutor` — it works, but it's heavier.
+
+### Where this pattern shines in real apps
+
+| Use case | What the branches do |
+|---|---|
+| **Multi-aspect analysis** | Classify, summarize, extract entities, score sentiment — all on the same document |
+| **Multi-language translation** | One branch per target language, single source text |
+| **Retrieval ensembles** | Query 3 vector stores or retrievers in parallel, merge results |
+| **Map-reduce summarization** | Summarize each chunk in parallel, then a final reducer chain |
+| **A/B prompt testing** | Same input, two prompts, compare outputs side by side |
+| **Multi-model voting** | Same prompt to Claude + GPT + Gemini, take majority answer |
+
+The last one is especially powerful with LangChain's model abstraction — swap the model in each branch and you've got cross-provider ensembling in five lines.
+
+### What `RunnableParallel` does NOT do
+
+- **It doesn't share state between branches.** Each branch sees the input independently. If branch B needs branch A's output, that's *sequential* — pipe `parallel_step | next_step` so the next step receives the merged dict.
+- **It doesn't deduplicate work.** If two branches send the same prompt, they make two API calls. Use a `RunnableLambda` upstream to compute shared values once and pass them down.
+- **It doesn't bound parallelism.** Three branches → three concurrent requests. Ten branches → ten. Add an external rate limiter if your API key has tight RPM limits.
+
+### Try this
+
+1. **Add a 4th branch** — e.g. `tweet_chain` ("write a 280-char tweet about {topic}"). Watch the parallel time stay roughly the same; sequential time grows.
+2. **Swap to async** — change `.invoke()` to `await .ainvoke()` (you'll need to wrap the script in `async def main()` and run with `asyncio.run`). Compare wall-clock.
+3. **Add a synthesizer step** — after the parallel fan-out, pipe the merged dict into a final chain that combines the three perspectives into one answer:
+   ```python
+   synthesizer = (
+       ChatPromptTemplate.from_messages([
+           ("human", "ELI5: {eli5}\n\nSenior: {senior}\n\nHaiku: {haiku}\n\nWrite a one-paragraph synthesis."),
+       ])
+       | model
+       | parser
+   )
+   chain = parallel | synthesizer
+   ```
+   This is the classic **map-reduce** shape: parallel branches (map) → single combiner (reduce).
+
+### Mental model in one line
+
+> **`prompt | model | parser` is a sequential pipe (one stage feeds the next). `{"a": chain_a, "b": chain_b}` is a parallel fan-out (one input, many simultaneous chains, merged output). Together they cover almost every LCEL pattern you'll write.**
+
+---
+
 ## Where to go next
 
 You've now seen the three foundational layers. Everything else in LangChain (RAG, multi-agent, memory, structured output) is built on top of them.
@@ -493,17 +636,23 @@ Suggested next steps, in order of value:
 
 ---
 
-## Quick reference — the three patterns
+## Quick reference — the four patterns
 
 ```python
 # 1. Just call the model
 model.invoke("...")
 
-# 2. Compose a chain
+# 2. Compose a chain (sequential pipe)
 chain = prompt | model | parser
 chain.invoke({"variable": "..."})
 
-# 3. Loop until the model stops requesting tools
+# 3. Fan out across chains (parallel)
+parallel = RunnableParallel(a=chain_a, b=chain_b, c=chain_c)
+# OR equivalently:  parallel = {"a": chain_a, "b": chain_b, "c": chain_c}
+parallel.invoke({"shared_input": "..."})
+# → {"a": ..., "b": ..., "c": ...}
+
+# 4. Loop until the model stops requesting tools
 model_with_tools = model.bind_tools([tool_a, tool_b])
 while True:
     msg = model_with_tools.invoke(history)
@@ -515,4 +664,4 @@ while True:
         history.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
 ```
 
-Three patterns. That's the whole foundation. Everything else is variations on these.
+Four patterns. That's the whole foundation. Everything else is variations on these.
