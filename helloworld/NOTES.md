@@ -11,6 +11,7 @@ A newbie-friendly tour of LangChain, built one file at a time. Each step adds ex
 | `parallel.py` | LCEL fan-out — run several chains concurrently | N (in parallel) |
 | `agent.py` | Tool-calling loop — model decides what to do | N (≥ 2) |
 | `structured.py` | Structured output — LLM returns a validated Pydantic object | 1 |
+| `agent_chatbot.py` | Stateful agent with `MemorySaver` — remembers across turns | N per turn |
 
 ---
 
@@ -754,6 +755,440 @@ That **reasoning + answer** pattern is sneaky-powerful. Pydantic preserves field
 
 ---
 
+## Step 6 — `agent_chatbot.py`: an agent that remembers
+
+Every agent we've built so far is **stateless**: each `.invoke()` starts from nothing. Ask *"my name is Sree"* then *"what's my name?"* → *"I don't know."* That's not a chatbot; that's a calculator with extra steps.
+
+The fix is **one keyword**:
+
+```python
+from langgraph.checkpoint.memory import MemorySaver
+
+agent = create_react_agent(
+    model,
+    tools=[add, get_current_time, count_letters],
+    checkpointer=MemorySaver(),    # ← the entire change
+)
+
+config = {"configurable": {"thread_id": "user-42"}}
+agent.invoke({"messages": [("user", "I'm Sree.")]}, config=config)
+agent.invoke({"messages": [("user", "What's my name?")]}, config=config)
+# → "Your name is Sree."
+```
+
+That's it. **One parameter to `create_react_agent`** and a **`thread_id`** in the call config turn the stateless agent into a real chatbot.
+
+### Run it
+
+```bash
+python agent_chatbot.py
+```
+
+### The shape
+
+```
+        ┌─ thread_id="alice" ──────────────────────────────────────┐
+        │                                                          │
+turn 1 ─┼─► agent.invoke({"messages": [...]}, config={thread="alice"})
+        │   ├── checkpointer SAVES state under thread "alice"      │
+        │   └── returns AIMessage                                  │
+        │                                                          │
+turn 2 ─┼─► agent.invoke({"messages": [...]}, config={thread="alice"})
+        │   ├── checkpointer LOADS prior state (turn 1's messages) │
+        │   ├── appends new HumanMessage                           │
+        │   └── runs model with the full history                   │
+        │                                                          │
+turn 3 ─┼─► ...                                                    │
+        └──────────────────────────────────────────────────────────┘
+
+        ┌─ thread_id="bob" ─ FULLY ISOLATED from alice ─────────────┐
+        │  agent.invoke({...}, config={thread="bob"})              │
+        │  → no idea who alice is                                  │
+        └──────────────────────────────────────────────────────────┘
+```
+
+### What the demo shows
+
+The file runs **3 turns** in thread `alice`, then **1 turn** in thread `bob`, then inspects the saved state.
+
+```
+alice turn 1:  "Hi! My name is Sree. I'm a data scientist."   → greeting
+alice turn 2:  "What's my name and what do I do?"              → "Sree, Data Scientist"
+alice turn 3:  "Add 42 and the number of letters in my name."  → tool calls: count_letters("Sree")=4, add(42,4)=46
+
+bob turn 1:    "What's my name?"                                → "I don't have access to that information"
+```
+
+Turn 3 is the showpiece: the agent uses a **fact from turn 1** (`my name = Sree`) as the input to a tool call in turn 3. **Multi-tool reasoning over remembered context.**
+
+### Token cost grows turn-over-turn
+
+```
+alice turn 1:  699 in
+alice turn 2: 1477 in    ← carries turn 1 forward
+alice turn 3: 1951 in    ← carries turns 1 + 2 forward
+bob turn 1:    689 in    ← fresh thread, ~same as alice's turn 1
+```
+
+Each turn re-sends the **entire** conversation history. A 10-turn chat re-pays for context 10 times. **This is why memory and prompt caching are a married pair** — `MemorySaver` makes the agent useful; caching keeps the cost bounded.
+
+### `get_state()` — peeking at what the checkpointer stored
+
+```python
+state = agent.get_state({"configurable": {"thread_id": "alice"}})
+state.values["messages"]   # list of all saved messages for this thread
+```
+
+For Alice's thread, that's **10 messages** after 3 turns:
+
+```
+ 1. HumanMessage   "Hi! My name is Sree..."
+ 2. AIMessage      greeting
+ 3. HumanMessage   "What's my name..."
+ 4. AIMessage      "Sree, Data Scientist"
+ 5. HumanMessage   "Add 42 and the number of letters..."
+ 6. AIMessage      <tool_calls: count_letters>     ← turn 3 starts a tool loop
+ 7. ToolMessage    <count_letters → 4>
+ 8. AIMessage      <tool_calls: add>
+ 9. ToolMessage    <add → 46>
+10. AIMessage      "**46**"
+```
+
+Turn 3 produced **5 messages** (6–10), not 1, because the agent ran a multi-step tool loop. The checkpointer stored the *whole loop*. The next turn will replay all 10 messages as context.
+
+### The `thread_id` pattern in production
+
+| Pattern | Example `thread_id` |
+|---|---|
+| Single-user assistant | `user.id` |
+| Multi-conversation chatbot | `f"{user.id}:{conversation.id}"` |
+| Topic-scoped agent | `f"{user.id}:topic:{topic_slug}"` |
+| Anonymous session | `request.cookies['session_id']` |
+| Shared brainstorm room | `room.id` (multiple users converge in one thread) |
+
+Same agent code, different `thread_id` per scope. The checkpointer handles isolation.
+
+### `MemorySaver` is dev-only — swap for production
+
+| Checkpointer | Use when |
+|---|---|
+| `MemorySaver()` | Local dev, tests, single-process scripts. State dies with the process. |
+| `SqliteSaver` | Single-instance app, local persistence. `from langgraph.checkpoint.sqlite import SqliteSaver` |
+| `PostgresSaver` | Multi-instance, real persistence, concurrent access. `from langgraph.checkpoint.postgres import PostgresSaver` |
+| Custom | Implement `BaseCheckpointSaver` for Redis, DynamoDB, your own store, etc. |
+
+Same `Checkpointer` interface across all of them. Swapping is one line.
+
+### What memory does NOT do (saved for later)
+
+- **Long-term semantic memory** ("Sree prefers concise answers" across many conversations) — different problem; needs a vector store or knowledge graph, not a checkpointer.
+- **Cross-thread fact sharing** — by design, each thread is isolated. If you want user-level facts available across all of a user's threads, store them outside the checkpointer (DB, vector store) and inject them into the system prompt or as a retrieved-context tool.
+- **Automatic summarization** of old turns to keep token cost flat — that's a separate technique (often "summary memory" or "buffer-window memory"). LangGraph supports it via custom state reducers, but `MemorySaver` alone just keeps appending.
+
+### Try this
+
+1. **Continue Alice's conversation** — add `turn("alice", "What was the answer again?")`. Watch the agent recall `46` from earlier *without re-running the tools*.
+2. **Compound math across remembered facts** — `turn("alice", "Multiply that by the letters in my role.")`. Three remembered facts (previous answer, name, role) plus chained tools.
+3. **Swap to SQLite persistence** — replace `MemorySaver()` with `SqliteSaver.from_conn_string("chats.db")`. Run twice; the second run remembers what the first said. Same code; survives restarts.
+4. **Pair with caching** — add a substantial system prompt with `cache_control` (as in `agent_lg_cached.py`). Watch input cost stop growing linearly. This is the *complete* production chatbot architecture.
+
+### Mental model in one line
+
+> **A checkpointer is the storage layer for an agent's conversation. The `thread_id` is the key. Add a checkpointer = the agent remembers. Change the `thread_id` = a fresh conversation. That's the entire abstraction.**
+
+---
+
+## Reference: Output Parsers
+
+You've been using one since `chain.py` (`StrOutputParser`) without thinking about it. Here's the full picture.
+
+### The one-line definition
+
+> **An output parser is a component that sits at the end of a chain and transforms the model's raw output into a useful, typed Python value.**
+
+```
+prompt → model → AIMessage → parser → typed Python value
+                              ↑
+                   output parser lives here
+```
+
+Every output parser is a `Runnable`, so it composes with `|` like everything else.
+
+### Why they exist
+
+By default, `model.invoke("...")` returns an `AIMessage` — a wrapper with `.content`, `.usage_metadata`, `.tool_calls`. That's awkward for most downstream code, which wants a `str`, a `dict`, a `list`, a `datetime`, an enum value, or a Pydantic instance. Output parsers convert `AIMessage` → the type your code actually wants.
+
+### The Runnable interface
+
+Every output parser implements:
+
+| Method | Purpose |
+|---|---|
+| `invoke(input)` | Parse one input synchronously |
+| `ainvoke(input)` | Async version |
+| `stream(input)` | Yield partial parsed output as the model streams |
+| `get_format_instructions()` | Return a string you embed in the prompt to *teach* the model the expected format |
+
+**That last one is the key**: parsers do double duty — they instruct the model what to produce *and* parse it on the way back.
+
+### The built-in catalog
+
+**String-level**
+
+| Parser | Output |
+|---|---|
+| `StrOutputParser` | `str` (just `.content`) |
+| `XMLOutputParser` | `dict` (parses `<tag>...</tag>`) |
+
+**Structured**
+
+| Parser | Output |
+|---|---|
+| `JsonOutputParser` | `dict` |
+| `PydanticOutputParser(pydantic_object=MyModel)` | `MyModel` instance |
+| `CommaSeparatedListOutputParser` | `list[str]` |
+| `NumberedListOutputParser` | `list[str]` |
+| `MarkdownListOutputParser` | `list[str]` |
+| `EnumOutputParser(enum=MyEnum)` | enum member |
+| `DatetimeOutputParser` | `datetime` |
+| `BooleanOutputParser` | `bool` |
+
+**Error-recovery**
+
+| Parser | What it does |
+|---|---|
+| `OutputFixingParser` | Wraps another parser. On parse failure, makes a *second LLM call* to fix the malformed output. |
+| `RetryOutputParser` | Wraps another parser. On failure, re-sends the original prompt with the parse error appended. |
+| `RegexParser` | Extract named groups via regex. Useful for semi-structured prose. |
+
+### The format-instructions pattern (the killer idiom)
+
+The parser **writes part of the prompt for you**. This keeps prompt and parser in sync — change the parser, the format instructions update automatically.
+
+```python
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+
+class Recipe(BaseModel):
+    dish: str = Field(description="Name of the dish")
+    ingredients: list[str]
+    cook_time_minutes: int
+
+parser = PydanticOutputParser(pydantic_object=Recipe)
+
+prompt = PromptTemplate(
+    template="Tell me about {dish}.\n{format_instructions}",
+    input_variables=["dish"],
+    partial_variables={"format_instructions": parser.get_format_instructions()},
+)
+
+chain = prompt | model | parser
+recipe: Recipe = chain.invoke({"dish": "carbonara"})
+```
+
+Inside `get_format_instructions()`, the parser emits a chunk of text describing the JSON schema. The model reads that schema, produces conforming JSON, and the parser turns it back into a `Recipe` instance.
+
+### Streaming (the underrated superpower)
+
+Some parsers yield partial parsed output as the model streams:
+
+```python
+async for chunk in chain.astream({"topic": "..."}):
+    print(chunk)   # progressively more complete dicts
+```
+
+`JsonOutputParser` is great for this — each yielded chunk is the JSON-so-far parsed into a (possibly partial) dict. Build a UI that progressively fills in fields. `StrOutputParser` streams trivially (one token at a time). `PydanticOutputParser` doesn't stream — it needs the whole JSON to validate.
+
+### Output parsers vs `with_structured_output` — which to use
+
+You just used `with_structured_output(EmailTriage)` in `structured.py`. Here's how the two approaches relate:
+
+| Aspect | `PydanticOutputParser` (older) | `with_structured_output` (modern) |
+|---|---|---|
+| How it works | Adds format instructions to prompt; model produces JSON; parser parses it | Binds the schema as a tool; forces the model to "call" it; reads the tool args |
+| Reliability | Brittle — model may emit malformed JSON, extra text, missing fields | High — uses provider-side tool-calling guarantees |
+| Provider support | Any LLM (works via prompting) | Requires tool-calling support (Anthropic, OpenAI, Gemini) |
+| Error recovery | Pair with `OutputFixingParser` | Validation client-side; you retry on `ValidationError` |
+| Streaming | Limited (only full JSON validates) | Same limitation |
+| Token efficiency | Slightly worse (format instructions live in prompt) | Slightly better (schema goes in `tools` field, doesn't pollute prompt) |
+
+**Rule of thumb:**
+- Typed Pydantic objects? → **`with_structured_output(MyModel)`**
+- Simple `str` / `list` / `dict` / `datetime`? → **output parser** (less ceremony)
+- LLM provider without tool-calling? → **output parser** is your only option
+- Streaming partial JSON? → **`JsonOutputParser`** + `.astream()`
+
+### The lifecycle — what's sent to the LLM, what's parsed, where
+
+This is the mental model that demystifies output parsers. Once it clicks, every parser type makes sense.
+
+#### The fundamental rule
+
+> **The LLM only speaks text. Parsing is ALWAYS client-side. The LLM has no idea your parser exists.**
+
+```
+        ┌───── BEFORE the call ─────┐      ┌──── AFTER the call ────┐
+                                    │      │
+prompt construction ───► HTTP ──►   │ LLM  │  ───► HTTP ───► parsing
+(may include the parser's            │      │                 (the response
+ format_instructions text)            │      │                  text or
+                                    │      │                  tool_call)
+                                    └──────┘
+```
+
+Three phases:
+
+| Phase | What happens | Code |
+|---|---|---|
+| **BEFORE** | Build the prompt text — including any `format_instructions` substituted in | `prompt.invoke(...)` |
+| **CALL** | Send HTTP request to the LLM, wait for response | `model.invoke(...)` |
+| **AFTER** | Convert response into your target type | `parser.invoke(...)` |
+
+The LLM only sees what's in the prompt text (or, for tool-calling, the `tools` field). It never sees the parser object. Parsers are pure client-side abstractions that participate in *both* the before-phase (via `get_format_instructions()`) and the after-phase (via `parse()`).
+
+#### What actually goes over the wire — three examples
+
+**With `StrOutputParser`** (the trivial case):
+
+```http
+POST /v1/messages
+{
+  "messages": [{"role": "user", "content": "Summarize this..."}]
+}
+
+Response:
+{
+  "content": [{"type": "text", "text": "Blade Runner 2049 is..."}]
+}
+```
+
+The parser contributed *nothing* to the prompt. After the call, it just does `ai_msg.content` — barely "parsing."
+
+**With `PydanticOutputParser`** (the prompt-based pattern):
+
+```http
+POST /v1/messages
+{
+  "messages": [{"role": "user", "content":
+    "Analyze this review...\n\n
+     Your response should be formatted as a JSON instance that conforms
+     to the JSON schema below.\n
+     {full JSON Schema, often ~1000+ tokens}"
+  }]
+}
+
+Response:
+{
+  "content": [{"type": "text", "text": "{\"rating\": 9, ...}"}]
+}
+```
+
+The parser's `get_format_instructions()` dumped a **1145-character JSON Schema right into the prompt** (you saw this in `parsers.py`). After the call, the parser runs `json.loads(text)` → `Pydantic.model_validate(data)` → typed instance. **Both before and after.**
+
+**With `with_structured_output`** (the tool-calling pattern):
+
+```http
+POST /v1/messages
+{
+  "messages": [{"role": "user", "content": "Analyze this review."}],
+  "tools": [
+    {
+      "name": "ReviewAnalysis",
+      "input_schema": {"type": "object", "properties": {...}}
+    }
+  ],
+  "tool_choice": {"type": "tool", "name": "ReviewAnalysis"}
+}
+
+Response:
+{
+  "content": [{
+    "type": "tool_use",
+    "name": "ReviewAnalysis",
+    "input": {"rating": 9, "sentiment": "positive", ...}
+  }]
+}
+```
+
+Critical differences:
+- The schema is **in the `tools` field**, *not* in the prompt text — prompt stays clean
+- `tool_choice` forces the model to use it
+- The response comes back as **`tool_use.input` — already a dict**, structured server-side by Anthropic
+- No `json.loads` step on the client. Just Pydantic validates the dict.
+
+#### Side-by-side: the elimination of text-parsing
+
+```
+              ┌────────────── PydanticOutputParser ──────────────┐
+              │  prompt + "...JSON Schema {schema}..."           │
+              │             ↓                                    │
+              │            LLM                                   │
+              │             ↓                                    │
+              │  text:  "{\"rating\": 9, ...}"                   │
+              │             ↓                                    │
+              │  json.loads → dict       ← FAILURE POINT         │
+              │             ↓                                    │
+              │  Pydantic validates → ReviewAnalysis             │
+              └──────────────────────────────────────────────────┘
+
+              ┌──────────── with_structured_output ──────────────┐
+              │  prompt + (schema in `tools`, NOT in text)       │
+              │             ↓                                    │
+              │            LLM                                   │
+              │             ↓                                    │
+              │  tool_call: {"name":"X", "input":{"rating":9}}   │
+              │             ↓                                    │
+              │  Pydantic validates → ReviewAnalysis             │
+              └──────────────────────────────────────────────────┘
+```
+
+That eliminated `json.loads` step is *the* point of failure in prompt-based parsing — malformed JSON, extra prose, "Sure! Here's the JSON:" preambles, mid-stream truncation. Tool-calling moves the structuring work from "model's text generation" to "model's tool-call mechanism," which the provider enforces server-side.
+
+#### Where parsing happens, per parser type — cheat sheet
+
+| Parser | What goes IN the prompt | What model produces | Parsing AFTER |
+|---|---|---|---|
+| `StrOutputParser` | (nothing extra) | text | `.content` access — trivial |
+| `CommaSeparatedListOutputParser` | "respond with comma-separated values" | `"a, b, c"` text | `text.split(",")` |
+| `JsonOutputParser` | "respond with valid JSON" | JSON-as-text | `json.loads` |
+| `PydanticOutputParser` | Full JSON Schema (~1000+ tokens) | JSON-as-text | `json.loads` + Pydantic validation |
+| `XMLOutputParser` | "respond with `<tag>` format" | XML-as-text | XML parser |
+| Custom (YAML, CSV, etc.) | Your custom instructions | Custom-format text | Your custom parse function |
+| `OutputFixingParser` | Same as wrapped parser | Same | Wrapped parser, plus retry-with-fix on failure |
+| **`with_structured_output`** | **Nothing in prompt; schema in `tools`** | **`tool_call` with structured dict** | **Pydantic validates the dict** |
+
+#### The three-line summary
+
+1. **The LLM only ever speaks text** (or, when given tool definitions, structured `tool_calls`). It cannot run your parser code.
+2. **Prompt-based parsers do double duty**: their `get_format_instructions()` is injected into the prompt *before* the call (steering the model); their `parse()` runs on the response *after* the call (decoding what came back).
+3. **`with_structured_output` lifts the parsing off your shoulders** by using the provider's tool-calling mechanism. The schema goes in the `tools` field, not the prompt text, and the response comes back already structured. No `json.loads` step. No malformed-text recovery. Just Pydantic validation.
+
+### Custom parsers (the escape hatch)
+
+Subclass `BaseOutputParser`:
+
+```python
+from langchain_core.output_parsers import BaseOutputParser
+import yaml
+
+class YamlOutputParser(BaseOutputParser):
+    def parse(self, text: str) -> dict:
+        return yaml.safe_load(text)
+
+    def get_format_instructions(self) -> str:
+        return "Respond in valid YAML. Use 2-space indentation."
+
+chain = prompt | model | YamlOutputParser()
+```
+
+That's the entire required interface: implement `parse`, optionally `get_format_instructions`. You have a first-class LCEL component.
+
+### Mental model in one line
+
+> **An output parser is the *adapter* between what the LLM emits (text) and what your Python code wants (a typed value). Like `pydantic` for unstructured text — except it also teaches the LLM how to produce text the parser can read.**
+
+---
+
 ## Where to go next
 
 You've now seen the three foundational layers. Everything else in LangChain (RAG, multi-agent, memory, structured output) is built on top of them.
@@ -768,7 +1203,7 @@ Suggested next steps, in order of value:
 
 ---
 
-## Quick reference — the five patterns
+## Quick reference — the six patterns
 
 ```python
 # 1. Just call the model
@@ -801,6 +1236,14 @@ class MyModel(BaseModel):
     field_b: Literal["x", "y", "z"]
 extractor = model.with_structured_output(MyModel)
 result: MyModel = extractor.invoke("some unstructured text")
+
+# 6. Stateful agent — remembers across .invoke() calls
+from langgraph.checkpoint.memory import MemorySaver
+agent = create_react_agent(model, tools=[...], checkpointer=MemorySaver())
+config = {"configurable": {"thread_id": "user-42"}}
+agent.invoke({"messages": [("user", "I'm Sree.")]},     config=config)
+agent.invoke({"messages": [("user", "What's my name?")]}, config=config)
+# → "Sree."
 ```
 
-Five patterns. That's the whole foundation. Everything else is variations on these.
+Six patterns. That's the whole foundation. Everything else is variations on these.
