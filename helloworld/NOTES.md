@@ -10,6 +10,7 @@ A newbie-friendly tour of LangChain, built one file at a time. Each step adds ex
 | `chain.py` | LCEL composition — `prompt \| model \| parser` | 1 |
 | `parallel.py` | LCEL fan-out — run several chains concurrently | N (in parallel) |
 | `agent.py` | Tool-calling loop — model decides what to do | N (≥ 2) |
+| `structured.py` | Structured output — LLM returns a validated Pydantic object | 1 |
 
 ---
 
@@ -622,6 +623,137 @@ The last one is especially powerful with LangChain's model abstraction — swap 
 
 ---
 
+## Step 5 — `structured.py`: typed, validated outputs
+
+So far every LLM response has been a **string** you have to read, parse, regex over, hope is well-formed. This step replaces all of that with one keyword:
+
+```python
+extractor = model.with_structured_output(EmailTriage)
+result: EmailTriage = extractor.invoke(email_text)
+```
+
+`result` is no longer a string. It's a fully-typed Pydantic instance. IDE autocompletes its fields. `mypy` validates them. Production code is happy.
+
+### The shape
+
+```
+unstructured text ──► extractor (model.with_structured_output(Model))
+                                          │
+                                          ▼
+                              Validated Pydantic instance
+                                  result.priority         # Literal["low","medium",...]
+                                  result.action_items     # list[str]
+                                  result.requires_response # bool
+```
+
+### Code (the heart of `structured.py`)
+
+```python
+from typing import Literal
+from pydantic import BaseModel, Field
+
+class EmailTriage(BaseModel):
+    """Triage information extracted from an email."""
+    summary: str = Field(description="One-sentence summary of what the email is about.")
+    priority: Literal["low", "medium", "high", "urgent"] = Field(
+        description="How urgently the recipient should respond, based on tone and content."
+    )
+    sentiment: Literal["positive", "neutral", "negative"]
+    requires_response: bool
+    action_items: list[str] = Field(
+        description="Concrete next steps the recipient must take. Empty list if none."
+    )
+    estimated_response_time_minutes: int
+
+extractor = model.with_structured_output(EmailTriage)
+result = extractor.invoke(email_text)
+
+print(result.priority)         # "urgent"
+print(result.action_items[0])  # str — fully typed
+```
+
+Run it:
+
+```bash
+python structured.py
+```
+
+### Sample output
+
+For an urgent production-incident email, Claude returns:
+
+```json
+{
+  "summary": "A 30% drop in billed events has been detected since a 14:00 UTC deploy...",
+  "priority": "urgent",
+  "sentiment": "negative",
+  "requires_response": true,
+  "action_items": [
+    "Roll back the billing-worker service to commit 8a3f12 immediately.",
+    "Confirm that event counts recover after the rollback.",
+    "Post status updates in #incidents every 15 minutes until resolved."
+  ],
+  "estimated_response_time_minutes": 5
+}
+```
+
+For a casual venue-question email, Claude returns `priority: "low"`, `sentiment: "positive"`, and a single action item. **No prompt engineering required** — the model adapts its output to fit the input.
+
+### Five lessons hidden in this one feature
+
+**1. The schema *is* the prompt.**
+You never wrote a system message. Never said "respond in JSON." Never said "priority must be one of low/medium/high/urgent." Claude reads your Pydantic class — *especially* the `Field(description=...)` strings — to figure out what to put where. **Better descriptions = better outputs.** This is the single most important takeaway. Most beginners miss it.
+
+**2. No string parsing. Ever.**
+`result.action_items[0]` is `str` indexing into a `list[str]`. No regex. No `json.loads`. No `try/except`. The output of an LLM is now a typed Python object that flows through the rest of your code like any other. This alone is the difference between a demo and production.
+
+**3. Validation is automatic.**
+If Claude returns a `priority` not in the `Literal` enum, Pydantic raises `ValidationError` *before* `result` is bound. You can retry, fall back, or surface a parse error — but the model **cannot** sneak invalid data into your code path. Same for types: `estimated_response_time_minutes: int` means Claude must produce an integer, not "about thirty."
+
+**4. It's tool-calling under the hood.**
+`with_structured_output(EmailTriage)` doesn't use a special API. It:
+- Converts your Pydantic class into a JSON schema
+- Binds that schema as a "tool" called `EmailTriage`
+- Tells Claude *"you must call this tool"*
+- Parses Claude's tool-call args into a `EmailTriage` instance
+
+Same propose-execute mechanism as `agent.py`. The "tool" is your data class, not a function. **Same plumbing, different application.**
+
+**5. All the LCEL goodness still works.**
+`extractor` is a first-class `Runnable`. You get `.invoke()`, `.batch()`, `.stream()`, `.ainvoke()` for free, and you can pipe it into other chains:
+
+```python
+batch_results: list[EmailTriage] = extractor.batch([email_1, email_2])  # parallel
+chain = email_fetcher | extractor | priority_router                     # composed
+```
+
+Typed objects flow through chains as cleanly as strings did.
+
+### Production patterns this unlocks
+
+| Pattern | Code shape |
+|---|---|
+| **Classification** | `class Result(BaseModel): label: Literal["spam","promo","work","personal"]` |
+| **Form-filling** from unstructured text | Pydantic class with `Optional[str] = None` for missing fields |
+| **Multi-output extraction** | `items: list[Item]` — extract list of typed sub-objects |
+| **Confidence scoring** | Add a `confidence: float = Field(ge=0, le=1)` field — model self-reports certainty |
+| **Reasoning + answer** | Add a `reasoning: str` field placed **first** in the class — forces chain-of-thought into the schema, all in one call |
+| **Validated tool args** | Use Pydantic to validate user input → pass to the model |
+
+That **reasoning + answer** pattern is sneaky-powerful. Pydantic preserves field order; the model fills `reasoning` before the answer fields, which means you get chain-of-thought reasoning *as part of the structured output*, no extra LLM calls.
+
+### Try this
+
+1. **Add a `reasoning: str` field** as the *first* field in `EmailTriage`. Re-run. The answers get noticeably better because the model has to think out loud before committing to the structured fields.
+2. **Make a field `Optional`** — e.g. `assigned_to: Optional[str] = None`. The model fills it when it can identify an assignee from the email body, and leaves it `None` when it can't.
+3. **Try a deliberately ambiguous email** — one where priority could plausibly be "low" or "medium". Watch what the model picks. Then tighten the `Field(description=...)` for `priority` to bias it the other way. **This is the only "prompt engineering" you need to do** with structured output.
+
+### Mental model in one line
+
+> **A string is what an LLM produces. A *typed Pydantic object* is what your production code wants. `model.with_structured_output(SomeModel)` is the one-line bridge. The Pydantic class is the prompt; the validator is the contract.**
+
+---
+
 ## Where to go next
 
 You've now seen the three foundational layers. Everything else in LangChain (RAG, multi-agent, memory, structured output) is built on top of them.
@@ -636,7 +768,7 @@ Suggested next steps, in order of value:
 
 ---
 
-## Quick reference — the four patterns
+## Quick reference — the five patterns
 
 ```python
 # 1. Just call the model
@@ -662,6 +794,13 @@ while True:
     for tc in msg.tool_calls:
         result = registry[tc["name"]].invoke(tc["args"])
         history.append(ToolMessage(content=str(result), tool_call_id=tc["id"]))
+
+# 5. Validated, typed output from unstructured text
+class MyModel(BaseModel):
+    field_a: str = Field(description="...")
+    field_b: Literal["x", "y", "z"]
+extractor = model.with_structured_output(MyModel)
+result: MyModel = extractor.invoke("some unstructured text")
 ```
 
-Four patterns. That's the whole foundation. Everything else is variations on these.
+Five patterns. That's the whole foundation. Everything else is variations on these.
