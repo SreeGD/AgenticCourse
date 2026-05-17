@@ -14,6 +14,7 @@ A newbie-friendly tour of LangChain, built one file at a time. Each step adds ex
 | `agent_chatbot.py` | Stateful agent with `MemorySaver` — remembers across turns | N per turn |
 | `rag.py` | RAG — retrieve relevant chunks, ground the answer in them | 1 (+ embeddings, local) |
 | `safe_rag.py` | RAG wrapped in input + output guardrails | 1-4 depending on guards |
+| `production_chatbot.py` | Capstone — RAG + memory + caching + guardrails composed | ~5-9 per turn |
 
 ---
 
@@ -1235,6 +1236,270 @@ The on-topic judge is a single small LLM call. A clever adversary asks *"What do
 ### Mental model in one line
 
 > **Guardrails are pre/post middleware around the LLM. Cheap checks first, expensive checks last, vague refusals to users, specific reasons in logs. They turn an LLM into a system you can ship to real users.**
+
+---
+
+## Visual Summary — the whole course in one place
+
+Use this as a single-page map to navigate, recall, or onboard someone new.
+
+### The architecture stack (what builds on what)
+
+```
+                ┌──────────────────────────────────────────────┐
+                │  production_chatbot.py                       │  ← composes everything
+                │  (RAG + memory + caching + guardrails)       │
+                └─────────────────┬────────────────────────────┘
+                                  │
+                ┌─────────────────┼─────────────────────┐
+                ▼                 ▼                     ▼
+        ┌──────────────┐   ┌──────────────┐   ┌────────────────────┐
+        │  Guardrails  │   │     RAG      │   │  Stateful Agent    │
+        │  in / out    │   │ retrieve-as- │   │  memory +          │
+        │  middleware  │   │ a-tool       │   │  multi-step tools  │
+        └──────┬───────┘   └──────┬───────┘   └─────────┬──────────┘
+               │                  │                     │
+               │           ┌──────┴──────┐              │
+               │           ▼             ▼              │
+               │     ┌──────────┐ ┌──────────────┐      │
+               │     │ Document │ │ Embeddings + │      │
+               │     │ loaders, │ │ Vector store │      │
+               │     │ splitters│ │ + retriever  │      │
+               │     └────┬─────┘ └──────┬───────┘      │
+               │          │              │              │
+               └──────────┴──────────────┴──────────────┘
+                                  │
+                                  ▼
+        ┌────────────────────────────────────────────────────┐
+        │  LCEL chains                                       │
+        │   prompt | model | parser    (sequential)          │
+        │   {"a": chain_a, "b": chain_b}  (parallel)         │
+        │   model.with_structured_output(MyModel) (typed)    │
+        │   output parsers, format_instructions              │
+        └────────────────┬───────────────────────────────────┘
+                         │
+                         ▼
+        ┌────────────────────────────────────────────────────┐
+        │  Model wrapper                                     │
+        │   ChatAnthropic, .invoke() / .stream() / .batch()  │
+        │   SystemMessage / HumanMessage / AIMessage         │
+        │   usage_metadata, cache_control                    │
+        └────────────────────────────────────────────────────┘
+```
+
+Each layer up the stack is **just composition** of layers below. There are no new fundamental abstractions — only patterns of combining the basics.
+
+### The 8 LCEL patterns at a glance
+
+```
+1.  model.invoke("...")                          [hello.py]
+        the lowest-level call
+
+2.  chain = prompt | model | parser              [chain.py]
+        the sequential pipe (LCEL primitive #1)
+
+3.  {"a": chain_a, "b": chain_b} | next_step     [parallel.py]
+        parallel fan-out (LCEL primitive #2)
+
+4.  while not msg.tool_calls:                    [agent.py]
+       msg = model.invoke(history)               [agent_lg.py]
+        propose-execute-feedback loop
+        (or: create_react_agent does it for you)
+
+5.  model.with_structured_output(MyModel)        [structured.py]
+        typed objects out of unstructured text
+
+6.  create_react_agent(model, tools=[...],       [agent_chatbot.py]
+                       checkpointer=MemorySaver())
+        stateful agent — memory by thread_id
+
+7.  retriever | prompt | model | parser          [rag.py]
+       (retriever ← embed → vector store)        [production_chatbot.py]
+        RAG — answer grounded in your documents
+
+8.  input_guards → agent → output_guards         [safe_rag.py]
+        guardrails — middleware around the LLM   [production_chatbot.py]
+```
+
+### The complete production architecture
+
+```
+                ┌────────────── production_chatbot.py ──────────────────┐
+                │                                                       │
+  user input    │  INPUT GUARDS  [PII regex | Injection regex | OnTopic]│
+       │        │       │ pass                                          │
+       └───────►│       ▼                                               │
+                │   create_react_agent                                  │
+                │      ├── CACHED SystemMessage (long, cache_control)   │   ← caching
+                │      ├── checkpointer=MemorySaver()                   │   ← memory
+                │      └── tools=[retrieve_docs, ...]                   │   ← RAG-as-tool
+                │              │                                        │
+                │              ▼ (may loop: model ↔ tool ↔ model)       │
+                │            answer                                     │
+                │              │                                        │
+                │              ▼                                        │
+                │  OUTPUT GUARDS [PII output | Faithfulness]            │
+                │       │ pass                                          │
+                └───────┼───────────────────────────────────────────────┘
+                        ▼
+                   user sees answer (or polite refusal)
+
+  Behind `retrieve_docs(query)`:
+     ┌────────┐   ┌──────────┐   ┌──────────┐   ┌────────────┐   ┌──────────┐
+     │ Loader │──►│ Splitter │──►│ Embedder │──►│Vector Store│──►│Retriever │
+     └────────┘   └──────────┘   └──────────┘   └────────────┘   └──────────┘
+     (one-time indexing at startup)              (per-query similarity search)
+```
+
+### The two-phase shape of RAG
+
+```
+INDEXING (once, at startup):
+   raw source ──► Loader ──► Documents
+                              │
+                              ▼
+                        Splitter ──► chunks (smaller Documents)
+                              │
+                              ▼
+                        Embedder ──► (chunk + vector) stored together
+                              │
+                              ▼
+                          Vector Store
+                          (4-field rows: id, text, metadata, vector)
+
+QUERYING (every request):
+   question  ──► Embedder  ──►  query vector
+                                     │
+                                     ▼
+                            cosine vs all stored vectors
+                                     │
+                                     ▼
+                             top-k chunks (text + metadata)
+                                     │
+                                     ▼
+                             prompt + chunks → LLM → answer
+```
+
+### The agent loop, visualized
+
+```
+   ┌─► model.invoke(history)
+   │        │
+   │        ├── tool_calls? ──no──► return answer (loop exits)
+   │        │
+   │        yes
+   │        │
+   │        ▼
+   │   for each tool_call:
+   │       run the function (← YOU run this, not the LLM)
+   │       append ToolMessage to history
+   │        │
+   └────────┘
+         continue loop
+```
+
+This is what `create_react_agent` does internally. You wrote it by hand in `agent.py` first to see it without the framework.
+
+### The guardrail wrapper
+
+```
+   user input
+       │
+       ▼
+   [cheap regex checks]      ← refuse here = $0 cost
+       │ pass
+       ▼
+   [LLM-judge: on-topic?]    ← 1 small LLM call (Sonnet ~100 in / 1 out)
+       │ pass
+       ▼
+   ┌──────────────────────┐
+   │   the actual chain   │  ← the expensive part
+   └──────────┬───────────┘
+              ▼
+   [output PII regex]        ← refuse here = answer suppressed
+       │ pass
+       ▼
+   [LLM-judge: faithful?]    ← only if retrieval happened
+       │ pass
+       ▼
+   user sees answer
+```
+
+Order is cheap → expensive so adversarial traffic short-circuits before reaching the LLM.
+
+### Concept → file index
+
+| Concept | Where it's taught |
+|---|---|
+| Model wrapper, `.invoke()`, `AIMessage` | `hello.py` — Step 1 |
+| Prompts (System / Human / Template / `ChatPromptTemplate`) | `chain.py` — Step 2 (prompt vocab) |
+| LCEL pipe operator (`|`) | `chain.py` — Step 2 |
+| Output parsers (Str / Json / Pydantic / etc.) | `parsers.py` + Reference section |
+| `format_instructions` pattern, custom parsers, `OutputFixingParser` | `parsers.py` + Reference section |
+| Parallel chains (`RunnableParallel`, dict-literal) | `parallel.py` — Step 4 |
+| Tool calling, `@tool`, `bind_tools`, `tool_calls`, `ToolMessage` | `agent.py` — Step 3 |
+| `create_react_agent`, framework agent | `agent_lg.py` (and `LEARNINGS.md`) |
+| Token usage tracking, growth per turn | `agent_lg.py` |
+| Prompt caching, `cache_control`, KV cache, prefill vs decode | `agent_lg_cached.py` (and `LEARNINGS.md`) |
+| Memory, `MemorySaver`, `thread_id`, checkpointers | `agent_chatbot.py` — Step 6 |
+| Structured output, `with_structured_output` | `structured.py` — Step 5 |
+| Loaders, `Document`, `page_content`, `metadata` | `rag.py` — Step 7 |
+| Splitters, `chunk_size`, `chunk_overlap` | `rag.py` — Step 7 |
+| Embeddings, vectors, cosine similarity, determinism | `rag.py` — Step 7 (dissect section) |
+| Vector stores, the 4-field record | `rag.py` — Step 7 |
+| Retrieval, `as_retriever`, top-k | `rag.py` — Step 7 |
+| What the LLM actually sees in RAG | `rag.py` — Step 7 (LLM sees section) |
+| Input/output guardrails, PII, injection, on-topic, faithfulness | `safe_rag.py` — Step 8 |
+| The LLM Client mental model | `LEARNINGS.md` |
+| Composition of all primitives | `production_chatbot.py` |
+
+### Mental models, distilled
+
+The seven one-liners that compress the whole course:
+
+1. **The LLM never calls anything. The LLM Client does.** *(Tool calling, MCP, agents — all variations of one dance.)*
+
+2. **A prompt is the input. A prompt template is a recipe for building a prompt.** *(System/Human/AI/Tool are message *roles*; templates produce typed messages from variables.)*
+
+3. **An output parser adapts text (what the LLM emits) into typed values (what your code wants).** *(`with_structured_output` is the modern alternative: tool-calling instead of text-parsing.)*
+
+4. **`prompt | model | parser` is sequential. `{"a": chain_a, "b": chain_b}` is parallel. Together they cover almost every LCEL pattern.**
+
+5. **Each turn carries the whole conversation. Memory adds state. Caching keeps cost bounded.** *(Stateless model + growing history → token cost grows linearly unless caching is enabled.)*
+
+6. **The cache discount is real because the server skips prefill — the most expensive 80% of inference — not because Anthropic is being nice.** *(The KV cache for the cached prefix is reused rather than recomputed.)*
+
+7. **RAG = "I pick the right text client-side, the LLM reads only that text." Faithfulness asks whether the answer could be reconstructed from those chunks alone.** *(The LLM never sees vectors or the retriever; it sees a normal prompt.)*
+
+### One-glance decision tree
+
+```
+"I want to..."
+   │
+   ├── "send one prompt, get one answer"         → pattern 1 (model.invoke)
+   ├── "format a prompt and parse output"        → pattern 2 (prompt|model|parser)
+   ├── "run several prompts in parallel"         → pattern 3 (RunnableParallel)
+   ├── "let the model use tools"                 → pattern 4 (create_react_agent)
+   ├── "get a typed Python object back"          → pattern 5 (with_structured_output)
+   ├── "remember conversation across calls"      → pattern 6 (add checkpointer=MemorySaver())
+   ├── "answer from my own documents"            → pattern 7 (RAG)
+   ├── "validate inputs and outputs"             → pattern 8 (guardrails)
+   └── "all of the above in one app"             → production_chatbot.py
+```
+
+### One-glance economics
+
+For Sonnet 4.6 ($3/M input, $15/M output, $0.30/M cache read, $3.75/M cache write):
+
+| Pattern | Per-call shape | Cost driver |
+|---|---|---|
+| Direct call | 1 model call | ~$0.001-0.01 per call |
+| Agent w/ tools | 1-N model calls per turn (N = tool steps) | grows with steps |
+| Chat with memory, no cache | every turn re-sends history | grows linearly with turns |
+| Chat with memory + caching | system prompt re-used at 0.1× | grows sublinearly |
+| RAG | model call + embed query (cheap, local) | ~constant per query |
+| Guardrails | extra cheap calls + LLM judges | +20-50% over base |
+| Production capstone | all of above | ~$0.005-0.020 per turn |
 
 ---
 
