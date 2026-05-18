@@ -221,10 +221,106 @@ Compare to single-agent on the same task: ~3-4 calls.
 |---|---|---|---|
 | **Short-term** | One thread (one conversation) | `MemorySaver` / `SqliteSaver` / `PostgresSaver` | Conversation history within a session |
 | **Long-term semantic** | One user, across all threads | Vector store | Facts about the user (name, role, preferences, ongoing context) |
-| **Long-term episodic** (advanced) | Specific past events | Vector store + timestamps | "We discussed X on 2026-03-15" |
+| **Long-term episodic** | Specific past events | Vector store + timestamps | "We discussed X on 2026-03-15" |
 | **Shared/global** | All users | Vector store / RAG | Public knowledge (your docs corpus) |
 
 `multi_agent.py` uses none (single-shot task). `long_term_memory.py` uses short-term + long-term semantic. Production chatbots use all four.
+
+### Episodic Memory — the third memory type
+
+The LTM in `long_term_memory.py` stores **semantic** facts: *"Sree is a data scientist."* These are timeless — they don't have a "when."
+
+**Episodic memory** stores **events**: *"On 2026-03-15 at 14:32, Sree asked about prompt caching. Outcome: satisfied with the answer (thumbs up)."* Events have:
+- A timestamp
+- A specific topic or interaction
+- Often an outcome (was this useful? did it resolve the user's question?)
+- A surrounding context (what came before, what came after)
+
+#### Why episodic memory matters separately from semantic LTM
+
+| Use case | Semantic LTM | Episodic memory |
+|---|---|---|
+| "What does the user prefer?" | ✓ "User prefers concise answers" | ✗ |
+| "When did we last discuss caching?" | ✗ | ✓ "2026-03-15, you explained KV cache and they were satisfied" |
+| "Has the user asked this before?" | ✗ | ✓ Match query against past episodes |
+| "What did we promise the user last time?" | ✗ | ✓ Retrieve last conversation's commitments |
+| "Show me my conversation history" | ✗ | ✓ Filter episodes by user + date |
+
+The two are complementary. **Semantic = who the user is. Episodic = what we've done together.**
+
+#### Implementation sketch (small extension to `long_term_memory.py`)
+
+```python
+class Episode(BaseModel):
+    user_id: str
+    timestamp: datetime
+    topic: str            # what was discussed (one-line summary)
+    user_query: str       # the user's actual message
+    agent_response: str   # what the agent answered
+    outcome: Literal["resolved", "unresolved", "follow-up-needed"]
+
+@tool
+def remember_episode(user_id: str, topic: str, user_query: str, agent_response: str, outcome: str) -> str:
+    """Save an interaction as an episodic memory after a substantive exchange."""
+    episode = Episode(
+        user_id=user_id,
+        timestamp=datetime.now(),
+        topic=topic,
+        user_query=user_query,
+        agent_response=agent_response,
+        outcome=outcome,
+    )
+    # Embed the (topic + user_query) for semantic recall; store full episode in metadata
+    ltm_store.add_documents([Document(
+        page_content=f"{topic}: {user_query}",
+        metadata={"user_id": user_id, "type": "episode", **episode.model_dump()},
+    )])
+    return f"Saved episode for {user_id}: {topic}"
+
+@tool
+def recall_episodes_about(user_id: str, query: str, since_days: int = 30) -> str:
+    """Retrieve past interactions about a topic (filtered by recency)."""
+    cutoff = datetime.now() - timedelta(days=since_days)
+    hits = ltm_store.similarity_search(
+        query,
+        k=5,
+        filter=lambda d: (
+            d.metadata.get("user_id") == user_id
+            and d.metadata.get("type") == "episode"
+            and datetime.fromisoformat(d.metadata.get("timestamp", "1970-01-01")) > cutoff
+        ),
+    )
+    if not hits:
+        return f"No prior conversations with {user_id} about '{query}' in the last {since_days} days."
+    return "\n".join(
+        f"- {d.metadata['timestamp']}: {d.metadata['topic']} ({d.metadata['outcome']})"
+        for d in hits
+    )
+```
+
+Same vector store, separate `type` field. The agent can now answer questions like *"What did we discuss last week?"* — a query no semantic LTM alone could handle.
+
+#### When to write episodes
+
+Same heuristic as semantic LTM, but at a different granularity:
+- **Semantic LTM** writes on biographical/preference signals (rare, ~1-3 per conversation)
+- **Episodic memory** writes after every substantive Q&A exchange (frequent, can be many per conversation)
+
+To avoid bloat: write episodes only after exchanges that produced **answers worth remembering** — not greetings, not error messages, not "thanks". The agent's system prompt should be explicit about this threshold.
+
+#### The three-memory pattern in production
+
+The full stack:
+
+```
+Short-term (thread/MemorySaver):  "what did we just say in this conversation"
+Long-term semantic (vector LTM):   "who is this user; what do they prefer"
+Long-term episodic (vector LTM):    "what have we discussed before; what was the outcome"
+                                    
+RAG (separate):                     "general public knowledge"
+```
+
+Each has a different access pattern, a different TTL philosophy, and a different cost shape. Mature chatbots layer all four.
 
 ### When to use multi-agent vs single-agent
 
