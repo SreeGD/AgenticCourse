@@ -77,14 +77,18 @@ class TestPhone:
 # ─── PII: API key ──────────────────────────────────────────────────────
 
 class TestAPIKey:
+    # Fixtures are intentionally non-conformant synthetic strings — they match
+    # the regex (sk-/pk- prefix + 20+ chars) but are clearly not real keys,
+    # so secret-scanning automation won't flag them.
+
     def test_anthropic_style_key(self):
-        assert API_KEY_RE.search("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAA")
+        assert API_KEY_RE.search("sk-test-FIXTURE-not-a-real-key-AAAA1111")
 
     def test_openai_style_key(self):
-        assert API_KEY_RE.search("sk-proj-AAAAAAAAAAAAAAAAAAAAAA")
+        assert API_KEY_RE.search("sk-fake-FIXTURE-not-real-XXXX2222")
 
     def test_publishable_key(self):
-        assert API_KEY_RE.search("pk-test-AAAAAAAAAAAAAAAAAAAAAAA")
+        assert API_KEY_RE.search("pk-test-FIXTURE-not-real-YYYY3333")
 
     def test_short_sk_not_matched(self):
         # Short sk- strings shouldn't trigger the key match (we require 20+ chars)
