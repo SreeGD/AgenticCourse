@@ -9,20 +9,20 @@
 ```
 ═══════ PHASE 1: FOUNDATION (12 lessons) ═══════           PHASE 2          PHASE 3
 
-  ✓ 01 model wrapper          (hello.py)                   ○ 13 system     ○ 16-19 Healthcare
+  ✓ 01 model wrapper          (01_model_wrapper.py)                   ○ 13 system     ○ 16-19 Healthcare
                                                               design       ○ 20-22 Agriculture
   ▶ 02 LCEL COMPOSITION  ◄═══════ YOU ARE HERE             ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 03 agent tool loop        (agent.py)                                    ○ 29-32 Family AI
-  ○ 04 prompt caching         (agent_lg_cached.py)
-  ○ 05 structured output      (structured.py)
-  ○ 06 parallel chains        (parallel.py)
-  ○ 07 output parsers         (parsers.py)
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 03 agent tool loop        (03_agent_manual.py)                                    ○ 29-32 Family AI
+  ○ 04 prompt caching         (04_prompt_caching.py)
+  ○ 05 structured output      (05_structured_output.py)
+  ○ 06 parallel chains        (06_parallel_chains.py)
+  ○ 07 output parsers         (07_output_parsers.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** Lesson 01 was one isolated call. Real systems chain multiple steps — template a prompt, call the model, parse the response. LCEL is the glue that makes that composition possible *and* portable across sync, async, streaming, and batch.
@@ -33,7 +33,7 @@
 
 | File | Role |
 |---|---|
-| [`chain.py`](../chain.py) | Three-stage LCEL chain: prompt → model → parser |
+| [`02_lcel_chain.py`](../02_lcel_chain.py) | Three-stage LCEL chain: prompt → model → parser |
 
 ---
 
@@ -164,7 +164,7 @@ print(result)
 ```bash
 cd helloworld
 source .venv/bin/activate
-python chain.py
+python 02_lcel_chain.py
 ```
 
 Expected output (excerpt):

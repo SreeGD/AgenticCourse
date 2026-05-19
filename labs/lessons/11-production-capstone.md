@@ -13,7 +13,7 @@
                                                               design       ○ 20-22 Agriculture
   ▶ 11 PRODUCTION CAPSTONE  ◄═══════ YOU ARE HERE          ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)                ○ 29-32 Family AI
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)                ○ 29-32 Family AI
 ```
 
 **Why this lesson now:** the synthesis lesson. Every prior lesson taught one primitive in isolation. This one demonstrates **all of them composed in one app** — the architecture used by 90% of production AI chatbots.
@@ -24,7 +24,7 @@
 
 | File | Role |
 |---|---|
-| [`production_chatbot.py`](../production_chatbot.py) | The capstone. ~350 lines. RAG + memory + caching + guardrails. |
+| [`11_production_chatbot.py`](../11_production_chatbot.py) | The capstone. ~350 lines. RAG + memory + caching + guardrails. |
 
 ---
 
@@ -61,7 +61,7 @@ The capstone is service night, all stations active.
 ## Visual
 
 ```
-                ┌─────────────── production_chatbot.py ──────────────────┐
+                ┌─────────────── 11_production_chatbot.py ──────────────────┐
                 │                                                       │
   user input    │  INPUT GUARDS  [PII regex | Injection regex | OnTopic]│
        │        │       │ pass                                          │
@@ -130,7 +130,7 @@ def safe_chat(user_input, thread_id):
 ## Run it
 
 ```bash
-python production_chatbot.py
+python 11_production_chatbot.py
 ```
 
 A 4-turn conversation, one `thread_id`, exercises every layer:
@@ -244,9 +244,9 @@ A: Three rules:
 
 The 53.8% in this demo is realistic for a short conversation. Long conversations climb to 80%+.
 
-**Q: Why two faithfulness guards (one in `safe_rag.py`, one here)?**
+**Q: Why two faithfulness guards (one in `10_guardrails.py`, one here)?**
 
-A: They differ in context. `safe_rag.py` has retrieval as a hardcoded step (always retrieves; checks every answer). `production_chatbot.py` has retrieval as a tool (the agent decides); the guard checks faithfulness **only when retrieval happened**. Greetings skip the check.
+A: They differ in context. `10_guardrails.py` has retrieval as a hardcoded step (always retrieves; checks every answer). `11_production_chatbot.py` has retrieval as a tool (the agent decides); the guard checks faithfulness **only when retrieval happened**. Greetings skip the check.
 
 **Q: How is the on-topic LLM-judge cost?**
 

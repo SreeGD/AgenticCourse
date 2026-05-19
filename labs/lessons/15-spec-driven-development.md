@@ -27,7 +27,7 @@
 
 | File | Role |
 |---|---|
-| [`spec_driven.py`](../spec_driven.py) | Four-phase SDD agent — emits Spec → TaskList → Code → VerificationReport |
+| [`15_spec_driven.py`](../15_spec_driven.py) | Four-phase SDD agent — emits Spec → TaskList → Code → VerificationReport |
 | [`generated_wordcount.py`](../generated_wordcount.py) | The artifact the SDD agent produced (a 7.5 KB working CLI word counter) |
 
 ---
@@ -155,7 +155,7 @@ report = verify_phase.invoke({
 ## Run it
 
 ```bash
-python spec_driven.py
+python 15_spec_driven.py
 ```
 
 Then run the generated tool:

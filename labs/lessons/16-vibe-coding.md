@@ -27,7 +27,7 @@
 
 | File | Role |
 |---|---|
-| [`vibe_coding.py`](../vibe_coding.py) | The loop: generate → sandbox → retry on error. Two demo intents. |
+| [`16_vibe_coding.py`](../16_vibe_coding.py) | The loop: generate → sandbox → retry on error. Two demo intents. |
 | [`generated_vibe_1.py`](../generated_vibe_1.py) | Output of Intent 1 (SHA-256 hasher) |
 | [`generated_vibe_2.py`](../generated_vibe_2.py) | Output of Intent 2 (top-5 largest files) |
 
@@ -120,7 +120,7 @@ def vibe_code(intent: str, max_iterations: int = 5) -> VibeRun:
 ## Run it
 
 ```bash
-python vibe_coding.py
+python 16_vibe_coding.py
 ```
 
 The file runs **two demo intents** back-to-back:
@@ -187,7 +187,7 @@ print(hash_value)
 
 Output: `b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9`
 
-`generated_vibe_2.py`: a `os.walk` + `os.path.getsize` script that skips hidden files, sorts by size descending, prints the top 5. Ran in a real directory; produced sensible results (LEARNINGS.md, lesson 14, production_chatbot.py — the actual largest files).
+`generated_vibe_2.py`: a `os.walk` + `os.path.getsize` script that skips hidden files, sorts by size descending, prints the top 5. Ran in a real directory; produced sensible results (LEARNINGS.md, lesson 14, 11_production_chatbot.py — the actual largest files).
 
 **Both worked. No human edits. No spec. No tasks. No verification.**
 
@@ -301,7 +301,7 @@ A: Honest answer: both demo intents were clean enough that Sonnet 4.6 nailed the
 
 A: For trusted code (you wrote the intent yourself, no adversarial input), yes — subprocess + timeout is fine. For *untrusted* code (e.g., users submit intents), no — wrap in Docker / Firecracker / gVisor. The sandbox in this lesson protects against infinite loops, not against malicious code.
 
-**Q: How is this different from "agent.py" with a code-execution tool?**
+**Q: How is this different from "03_agent_manual.py" with a code-execution tool?**
 
 A: Almost identical in spirit. Vibe coding hardcodes the loop in Python; an agent with a `run_code` tool lets the LLM decide when to run. The agent version is more flexible (the LLM can run multiple snippets, look at outputs, decide next step); vibe is simpler (one-shot generation, run, retry on fail). Pick whichever fits.
 

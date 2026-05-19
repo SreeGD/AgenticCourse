@@ -11,17 +11,17 @@
 
   ▶ 01 MODEL WRAPPER  ◄═══════ YOU ARE HERE                ○ 13 system     ○ 16-19 Healthcare
                                                               design       ○ 20-22 Agriculture
-  ○ 02 LCEL composition       (chain.py)                   ○ 14 red-team   ○ 23-25 Finance
-  ○ 03 agent tool loop        (agent.py)                   ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 04 prompt caching         (agent_lg_cached.py)                          ○ 29-32 Family AI
-  ○ 05 structured output      (structured.py)
-  ○ 06 parallel chains        (parallel.py)
-  ○ 07 output parsers         (parsers.py)
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 02 LCEL composition       (02_lcel_chain.py)                   ○ 14 red-team   ○ 23-25 Finance
+  ○ 03 agent tool loop        (03_agent_manual.py)                   ○ 15 AI UX      ○ 26-28 Vidya Karana
+  ○ 04 prompt caching         (04_prompt_caching.py)                          ○ 29-32 Family AI
+  ○ 05 structured output      (05_structured_output.py)
+  ○ 06 parallel chains        (06_parallel_chains.py)
+  ○ 07 output parsers         (07_output_parsers.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson first:** every higher-level pattern — chains, agents, RAG, multi-agent systems — is sugar on top of `model.invoke()`. You can't reason about token costs, retries, or streaming until you understand the primitive.
@@ -32,7 +32,7 @@
 
 | File | Role |
 |---|---|
-| [`hello.py`](../hello.py) | The minimal example: load env → instantiate `ChatAnthropic` → invoke → print |
+| [`01_model_wrapper.py`](../01_model_wrapper.py) | The minimal example: load env → instantiate `ChatAnthropic` → invoke → print |
 
 ---
 
@@ -131,7 +131,7 @@ print(response.content)
 ```bash
 cd helloworld
 source .venv/bin/activate
-python hello.py
+python 01_model_wrapper.py
 ```
 
 Expected output (will vary):

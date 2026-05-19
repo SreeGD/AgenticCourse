@@ -27,8 +27,8 @@
 
 | File | Role |
 |---|---|
-| [`multi_agent.py`](../multi_agent.py) | Supervisor + 3 specialist agents (researcher / writer / reviewer) |
-| [`long_term_memory.py`](../long_term_memory.py) | Agent with conversation memory + vector-stored user facts across sessions |
+| [`14_multi_03_agent_manual.py`](../14_multi_03_agent_manual.py) | Supervisor + 3 specialist agents (researcher / writer / reviewer) |
+| [`14_long_term_memory.py`](../14_long_term_memory.py) | Agent with conversation memory + vector-stored user facts across sessions |
 
 ---
 
@@ -185,13 +185,13 @@ agent = create_react_agent(
 ## Run it
 
 ```bash
-python multi_agent.py
-python long_term_memory.py
+python 14_multi_03_agent_manual.py
+python 14_long_term_memory.py
 ```
 
-`multi_agent.py` writes a blog post about prompt caching via supervisor routing. You'll see the supervisor's tool calls printed as it routes: `[supervisor → researcher] ... → writer ... → reviewer ...`.
+`14_multi_03_agent_manual.py` writes a blog post about prompt caching via supervisor routing. You'll see the supervisor's tool calls printed as it routes: `[supervisor → researcher] ... → writer ... → reviewer ...`.
 
-`long_term_memory.py` runs 2 sessions for user "sree". Session 1 facts get saved to LTM. Session 2 (new `thread_id`) starts fresh on short-term memory but recalls Sree's facts from LTM.
+`14_long_term_memory.py` runs 2 sessions for user "sree". Session 1 facts get saved to LTM. Session 2 (new `thread_id`) starts fresh on short-term memory but recalls Sree's facts from LTM.
 
 ---
 
@@ -224,11 +224,11 @@ Compare to single-agent on the same task: ~3-4 calls.
 | **Long-term episodic** | Specific past events | Vector store + timestamps | "We discussed X on 2026-03-15" |
 | **Shared/global** | All users | Vector store / RAG | Public knowledge (your docs corpus) |
 
-`multi_agent.py` uses none (single-shot task). `long_term_memory.py` uses short-term + long-term semantic. Production chatbots use all four.
+`14_multi_03_agent_manual.py` uses none (single-shot task). `14_long_term_memory.py` uses short-term + long-term semantic. Production chatbots use all four.
 
 ### Episodic Memory — the third memory type
 
-The LTM in `long_term_memory.py` stores **semantic** facts: *"Sree is a data scientist."* These are timeless — they don't have a "when."
+The LTM in `14_long_term_memory.py` stores **semantic** facts: *"Sree is a data scientist."* These are timeless — they don't have a "when."
 
 **Episodic memory** stores **events**: *"On 2026-03-15 at 14:32, Sree asked about prompt caching. Outcome: satisfied with the answer (thumbs up)."* Events have:
 - A timestamp
@@ -248,7 +248,7 @@ The LTM in `long_term_memory.py` stores **semantic** facts: *"Sree is a data sci
 
 The two are complementary. **Semantic = who the user is. Episodic = what we've done together.**
 
-#### Implementation sketch (small extension to `long_term_memory.py`)
+#### Implementation sketch (small extension to `14_long_term_memory.py`)
 
 ```python
 class Episode(BaseModel):
@@ -353,7 +353,7 @@ Each has a different access pattern, a different TTL philosophy, and a different
 
 1. **Add a 4th specialist** — e.g., a fact-checker who searches the web. Add it as another `@tool` and update the supervisor's system prompt. No other changes needed.
 2. **Make the supervisor use different models per specialist** — Haiku for the routing supervisor, Sonnet for researcher + writer, Opus for the reviewer. Watch the cost drop.
-3. **Add LTM to `production_chatbot.py`** — the capstone has short-term memory but no LTM. Add the two tools and watch the chatbot remember preferences across sessions.
+3. **Add LTM to `11_production_chatbot.py`** — the capstone has short-term memory but no LTM. Add the two tools and watch the chatbot remember preferences across sessions.
 4. **Inspect the LTM after a long conversation** — print all facts saved: `ltm_store.similarity_search("", k=100, filter=lambda d: d.metadata.get("user_id") == "sree")`. See what the agent decided to remember.
 5. **Add LTM fact dedup** — if the agent tries to save a fact that's already in LTM, skip the write. Hint: search first, only save if no high-similarity hit.
 
@@ -393,7 +393,7 @@ A: Both use vector stores. The difference is **what's stored and why**:
 - **RAG** stores **documents** for answering domain questions. Shared across users.
 - **LTM** stores **facts about a specific user** for personalization. Per-user.
 
-You can have both in the same chatbot — `production_chatbot.py` uses RAG; LTM would add per-user personalization on top.
+You can have both in the same chatbot — `11_production_chatbot.py` uses RAG; LTM would add per-user personalization on top.
 
 **Q: How do I know when to save a fact to LTM?**
 
@@ -411,7 +411,7 @@ A: Two options:
 - **Append + filter** — always add new facts; when retrieving, sort by timestamp and prefer recent
 - **Update in place** — search for similar facts first; if found and conflicting, update instead of append
 
-For demo simplicity, `long_term_memory.py` does append. Production usually does update-in-place.
+For demo simplicity, `14_long_term_memory.py` does append. Production usually does update-in-place.
 
 **Q: Is LTM safe for sensitive data?**
 

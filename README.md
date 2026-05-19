@@ -2,7 +2,7 @@
 
 A hands-on curriculum for building agentic AI systems with **LangChain**, **LangGraph**, and **Anthropic Claude** — from a one-line `model.invoke()` to a multi-agent, RAG-grounded, cached, guardrailed, memory-having production chatbot.
 
-Built incrementally as a learning project. Every file in `helloworld/` is a runnable example that adds exactly one concept on top of the previous one.
+Built incrementally as a learning project. Every file in `labs/` is a runnable example that adds exactly one concept on top of the previous one.
 
 ---
 
@@ -10,39 +10,39 @@ Built incrementally as a learning project. Every file in `helloworld/` is a runn
 
 | If you want to... | Go to |
 |---|---|
-| **See what's been built so far** | [`helloworld/`](helloworld/) — 13 working Python examples |
-| **Understand the concepts step by step** | [`helloworld/NOTES.md`](helloworld/NOTES.md) — the foundational walkthrough |
-| **Read the conceptual deep dives** | [`helloworld/LEARNINGS.md`](helloworld/LEARNINGS.md) — prompt caching, the LLM Client mental model, token economics |
-| **See the full 32-session learning plan** | [`helloworld/CURRICULUM.md`](helloworld/CURRICULUM.md) + [`helloworld/CURRICULUM.csv`](helloworld/CURRICULUM.csv) |
+| **See what's been built so far** | [`labs/`](labs/) — 13 working Python examples |
+| **Understand the concepts step by step** | [`labs/NOTES.md`](labs/NOTES.md) — the foundational walkthrough |
+| **Read the conceptual deep dives** | [`labs/LEARNINGS.md`](labs/LEARNINGS.md) — prompt caching, the LLM Client mental model, token economics |
+| **See the full 32-session learning plan** | [`labs/CURRICULUM.md`](labs/CURRICULUM.md) + [`labs/CURRICULUM.csv`](labs/CURRICULUM.csv) |
 | **Get the project running locally** | [Quick start](#quick-start) below |
 
 ---
 
-## What's in `helloworld/`
+## What's in `labs/`
 
 Each file teaches one concept and runs standalone.
 
 | # | File | Concept |
 |---|---|---|
-| 1 | `hello.py` | Model wrapper — `ChatAnthropic.invoke()` |
-| 2 | `chain.py` | LCEL composition — `prompt \| model \| parser` |
-| 3 | `parallel.py` | LCEL fan-out — `RunnableParallel` |
-| 4 | `agent.py` | Manual tool-calling loop (hand-written `while not msg.tool_calls`) |
-| 5 | `agent_lg.py` | Framework agent — `create_react_agent` from LangGraph |
-| 6 | `agent_lg_cached.py` | Prompt caching — 76% cheaper per run with one keyword |
-| 7 | `structured.py` | Typed output — `model.with_structured_output(PydanticModel)` |
-| 8 | `parsers.py` | The six built-in output parsers + a custom one |
-| 9 | `agent_chatbot.py` | Stateful agent — `MemorySaver` + `thread_id` |
-| 10 | `rag.py` | Full RAG pipeline — load → split → embed → store → retrieve → generate |
-| 11 | `safe_rag.py` | RAG wrapped in input + output guardrails (PII, injection, on-topic, faithfulness) |
-| 12 | `production_chatbot.py` | **Capstone** — RAG + memory + caching + guardrails composed in one architecture |
-| 13 | `mcp_server.py` + `mcp_client.py` | MCP (Model Context Protocol) — your tools shared via JSON-RPC stdio, usable by Claude Desktop / Cursor / any MCP client |
+| 1 | `01_model_wrapper.py` | Model wrapper — `ChatAnthropic.invoke()` |
+| 2 | `02_lcel_chain.py` | LCEL composition — `prompt \| model \| parser` |
+| 3 | `06_parallel_chains.py` | LCEL fan-out — `RunnableParallel` |
+| 4 | `03_agent_manual.py` | Manual tool-calling loop (hand-written `while not msg.tool_calls`) |
+| 5 | `03_agent_framework.py` | Framework agent — `create_react_agent` from LangGraph |
+| 6 | `04_prompt_caching.py` | Prompt caching — 76% cheaper per run with one keyword |
+| 7 | `05_structured_output.py` | Typed output — `model.with_structured_output(PydanticModel)` |
+| 8 | `07_output_parsers.py` | The six built-in output parsers + a custom one |
+| 9 | `08_chatbot_memory.py` | Stateful agent — `MemorySaver` + `thread_id` |
+| 10 | `09_rag.py` | Full RAG pipeline — load → split → embed → store → retrieve → generate |
+| 11 | `10_guardrails.py` | RAG wrapped in input + output guardrails (PII, injection, on-topic, faithfulness) |
+| 12 | `11_production_chatbot.py` | **Capstone** — RAG + memory + caching + guardrails composed in one architecture |
+| 13 | `12_mcp_server.py` + `12_mcp_client.py` | MCP (Model Context Protocol) — your tools shared via JSON-RPC stdio, usable by Claude Desktop / Cursor / any MCP client |
 
 Plus:
-- [`NOTES.md`](helloworld/NOTES.md) — step-by-step walkthrough of every file
-- [`LEARNINGS.md`](helloworld/LEARNINGS.md) — conceptual deep dives (LLM Client, caching mechanics, lifecycle)
-- [`CURRICULUM.md`](helloworld/CURRICULUM.md) — the 32-session learning plan
-- [`CURRICULUM.csv`](helloworld/CURRICULUM.csv) — tracker spreadsheet
+- [`NOTES.md`](labs/NOTES.md) — step-by-step walkthrough of every file
+- [`LEARNINGS.md`](labs/LEARNINGS.md) — conceptual deep dives (LLM Client, caching mechanics, lifecycle)
+- [`CURRICULUM.md`](labs/CURRICULUM.md) — the 32-session learning plan
+- [`CURRICULUM.csv`](labs/CURRICULUM.csv) — tracker spreadsheet
 
 ---
 
@@ -56,7 +56,7 @@ Plus:
 | **Architect Skills** | 14-16 | System Design Interview • Red-teaming • AI UX |
 | **Vertical Deep Dives** | 17-32 | Healthcare • Agriculture • Finance • Vidya Karana (wellness/yoga/Vedic) • Family AI Agent |
 
-See [`helloworld/CURRICULUM.md`](helloworld/CURRICULUM.md) for the full session-by-session plan.
+See [`labs/CURRICULUM.md`](labs/CURRICULUM.md) for the full session-by-session plan.
 
 ---
 
@@ -64,7 +64,7 @@ See [`helloworld/CURRICULUM.md`](helloworld/CURRICULUM.md) for the full session-
 
 ```bash
 git clone https://github.com/SreeGD/AgenticCourse.git
-cd AgenticCourse/helloworld
+cd AgenticCourse/labs
 
 # Create a Python 3.10+ venv
 python3.11 -m venv .venv
@@ -78,12 +78,12 @@ cp .env.example .env
 # Edit .env and set ANTHROPIC_API_KEY=sk-ant-...
 
 # Run any example
-python hello.py                 # send one prompt
-python chain.py                 # LCEL chain
-python agent_lg.py              # framework agent
-python rag.py                   # full RAG pipeline
-python production_chatbot.py    # the capstone
-python mcp_client.py            # MCP demo (Session 1 of new curriculum)
+python 01_model_wrapper.py                 # send one prompt
+python 02_lcel_chain.py                 # LCEL chain
+python 03_agent_framework.py              # framework agent
+python 09_rag.py                   # full RAG pipeline
+python 11_production_chatbot.py    # the capstone
+python 12_mcp_client.py            # MCP demo (Session 1 of new curriculum)
 ```
 
 Get an Anthropic API key at https://console.anthropic.com.
@@ -99,7 +99,7 @@ Get an Anthropic API key at https://console.anthropic.com.
 - **Tool protocol:** MCP (Model Context Protocol)
 - **Python:** 3.11+
 
-See [`helloworld/requirements.txt`](helloworld/requirements.txt) for the full dependency list.
+See [`labs/requirements.txt`](labs/requirements.txt) for the full dependency list.
 
 ---
 
@@ -115,13 +115,13 @@ The seven one-liners that compress the curriculum so far:
 6. **The cache discount is real because the server skips prefill — the most expensive 80% of inference — not because Anthropic is being nice.**
 7. **RAG = "I pick the right text client-side, the LLM reads only that text."**
 
-Full discussion in [`helloworld/LEARNINGS.md`](helloworld/LEARNINGS.md).
+Full discussion in [`labs/LEARNINGS.md`](labs/LEARNINGS.md).
 
 ---
 
 ## Status
 
-**Active learning project.** Foundation (Sessions 1-13 of the original 13 + Session 1 of the new 32) is complete and working. The remaining 31 sessions (agentic patterns, workflow patterns, verticals: healthcare / agriculture / finance / vidya karana / family AI) are planned in [`CURRICULUM.md`](helloworld/CURRICULUM.md).
+**Active learning project.** Foundation (Sessions 1-13 of the original 13 + Session 1 of the new 32) is complete and working. The remaining 31 sessions (agentic patterns, workflow patterns, verticals: healthcare / agriculture / finance / vidya karana / family AI) are planned in [`CURRICULUM.md`](labs/CURRICULUM.md).
 
 This repo is built and maintained by **Sree** (@SreeGD) — a data scientist learning agentic AI architecture session by session.
 

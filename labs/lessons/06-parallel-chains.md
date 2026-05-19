@@ -9,20 +9,20 @@
 ```
 ═══════ PHASE 1: FOUNDATION (12 lessons) ═══════           PHASE 2          PHASE 3
 
-  ✓ 01 model wrapper          (hello.py)                   ○ 13 system     ○ 16-19 Healthcare
-  ✓ 02 LCEL composition       (chain.py)                       design       ○ 20-22 Agriculture
-  ✓ 03 agent tool loop        (agent.py, agent_lg.py)      ○ 14 red-team   ○ 23-25 Finance
-  ✓ 04 prompt caching         (agent_lg_cached.py)         ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ✓ 05 structured output      (structured.py)                               ○ 29-32 Family AI
+  ✓ 01 model wrapper          (01_model_wrapper.py)                   ○ 13 system     ○ 16-19 Healthcare
+  ✓ 02 LCEL composition       (02_lcel_chain.py)                       design       ○ 20-22 Agriculture
+  ✓ 03 agent tool loop        (03_agent_manual.py, 03_agent_framework.py)      ○ 14 red-team   ○ 23-25 Finance
+  ✓ 04 prompt caching         (04_prompt_caching.py)         ○ 15 AI UX      ○ 26-28 Vidya Karana
+  ✓ 05 structured output      (05_structured_output.py)                               ○ 29-32 Family AI
 
   ▶ 06 PARALLEL CHAINS  ◄═══════ YOU ARE HERE
 
-  ○ 07 output parsers         (parsers.py)
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 07 output parsers         (07_output_parsers.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** by lesson 5 you can build sophisticated linear chains. Real systems often need to fan *out* — run multiple analyses on the same input concurrently. This lesson adds the parallel primitive.
@@ -33,7 +33,7 @@
 
 | File | Role |
 |---|---|
-| [`parallel.py`](../parallel.py) | Three parallel chains explaining the same topic for different audiences — with timing showing the speedup |
+| [`06_parallel_chains.py`](../06_parallel_chains.py) | Three parallel chains explaining the same topic for different audiences — with timing showing the speedup |
 
 ---
 
@@ -113,7 +113,7 @@ chain = parallel | combiner
 
 ## The code
 
-The whole `parallel.py`:
+The whole `06_parallel_chains.py`:
 
 ```python
 def make_chain(template: str):
@@ -139,7 +139,7 @@ result = parallel.invoke({"topic": "prompt caching"})  # ≈ max time
 ## Run it
 
 ```bash
-python parallel.py
+python 06_parallel_chains.py
 ```
 
 Expected output (real numbers from a clean run):

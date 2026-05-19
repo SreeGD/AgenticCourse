@@ -1,6 +1,6 @@
 # LangChain — Part 2: Frameworks, Token Economics, and Prompt Caching
 
-A second-half companion to [`NOTES.md`](./NOTES.md). That doc covered the foundations — `hello.py`, `chain.py`, `agent.py` — and ended with the most important mental model: *"The LLM never calls anything. The LLM Client does."*
+A second-half companion to [`NOTES.md`](./NOTES.md). That doc covered the foundations — `01_model_wrapper.py`, `02_lcel_chain.py`, `03_agent_manual.py` — and ended with the most important mental model: *"The LLM never calls anything. The LLM Client does."*
 
 This doc continues from there. We move from "I built an agent loop by hand" to "the framework version" to "I can see what every turn actually costs" to "I can make those turns 76% cheaper with one keyword."
 
@@ -8,16 +8,16 @@ This doc continues from there. We move from "I built an agent loop by hand" to "
 
 | File | What it adds |
 |---|---|
-| `agent_lg.py` | The framework version of the manual loop in `agent.py` — uses `create_react_agent` from `langgraph` |
-| `agent_lg_cached.py` | The same agent, with prompt caching wired up. Demonstrates the cost difference. |
+| `03_agent_framework.py` | The framework version of the manual loop in `03_agent_manual.py` — uses `create_react_agent` from `langgraph` |
+| `04_prompt_caching.py` | The same agent, with prompt caching wired up. Demonstrates the cost difference. |
 
 ---
 
-## Step 4 — `agent_lg.py`: the framework version of the agent
+## Step 4 — `03_agent_framework.py`: the framework version of the agent
 
 ### Same agent, different driver
 
-`agent.py` had a hand-written `while True:` loop that:
+`03_agent_manual.py` had a hand-written `while True:` loop that:
 1. Called `model.invoke(history)`
 2. Checked for `tool_calls`
 3. Ran each tool, appended `ToolMessage` results
@@ -37,14 +37,14 @@ That's the entire loop. Same propose → execute → feedback → answer dance, 
 
 ### Reading the trace
 
-Use `stream_mode="values"` to see every intermediate state — same trace as `agent.py`'s manual loop:
+Use `stream_mode="values"` to see every intermediate state — same trace as `03_agent_manual.py`'s manual loop:
 
 ```python
 for event in agent.stream({"messages": [("user", question)]}, stream_mode="values"):
     event["messages"][-1].pretty_print()
 ```
 
-You'll see exactly what you saw with `agent.py`:
+You'll see exactly what you saw with `03_agent_manual.py`:
 ```
 Human Message
 Ai Message     ← with tool_calls (no .content text)
@@ -109,11 +109,11 @@ def total_usage(messages):
                for m in messages if isinstance(m, AIMessage))
 ```
 
-(`agent_lg.py` has a fuller `print_usage()` that breaks it down per call and surfaces cache fields.)
+(`03_agent_framework.py` has a fuller `print_usage()` that breaks it down per call and surfaces cache fields.)
 
 ### The four lessons hidden in the numbers
 
-When we ran `agent_lg.py`, we saw something like:
+When we ran `03_agent_framework.py`, we saw something like:
 
 ```
 call 1: in= 640  out= 102  total=742
@@ -208,8 +208,8 @@ That's it. That's the whole "tool use" mechanism. The LLM proposes; your code di
         v                                      v
 ```
 
-In `agent.py`, the LLM Client is your hand-written `while True:` loop.
-In `agent_lg.py`, the LLM Client is `create_react_agent`.
+In `03_agent_manual.py`, the LLM Client is your hand-written `while True:` loop.
+In `03_agent_framework.py`, the LLM Client is `create_react_agent`.
 In Cursor / Claude Desktop / Cline, the LLM Client is the IDE.
 In OpenAI's Assistants API, the LLM Client is OpenAI's runtime.
 
@@ -239,11 +239,11 @@ Once you have the "LLM Client" frame, the rest of the ecosystem maps cleanly:
 
 ---
 
-## Step 6 — `agent_lg_cached.py`: prompt caching
+## Step 6 — `04_prompt_caching.py`: prompt caching
 
 ### The problem in your own numbers
 
-Look at what `agent_lg.py` showed:
+Look at what `03_agent_framework.py` showed:
 
 ```
 call 1:   640 in
@@ -400,7 +400,7 @@ The cache is **silently extended** every time you hit it. If user A hits at minu
 
 ---
 
-## Real numbers from `agent_lg_cached.py`
+## Real numbers from `04_prompt_caching.py`
 
 We ran the same 2-turn agent three times with a ~2000-token system prompt:
 
@@ -474,18 +474,18 @@ Highest-leverage next steps:
 ## Quick reference — the four files together
 
 ```python
-# 1. hello.py — the model wrapper
+# 1. 01_model_wrapper.py — the model wrapper
 model.invoke("...")
 
-# 2. chain.py — LCEL composition
+# 2. 02_lcel_chain.py — LCEL composition
 chain = prompt | model | parser
 chain.invoke({"variable": "..."})
 
-# 3. agent.py / agent_lg.py — the agent loop
+# 3. 03_agent_manual.py / 03_agent_framework.py — the agent loop
 agent = create_react_agent(model, tools=[...])
 agent.invoke({"messages": [("user", "...")]})
 
-# 4. agent_lg_cached.py — caching the stable prefix
+# 4. 04_prompt_caching.py — caching the stable prefix
 cached_system = SystemMessage(content=[
     {"type": "text", "text": LONG_SYSTEM, "cache_control": {"type": "ephemeral"}},
 ])

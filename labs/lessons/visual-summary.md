@@ -10,7 +10,7 @@ This is a **reference page**, not part of the linear lesson sequence. Land here 
 
 ```
                 ┌──────────────────────────────────────────────┐
-                │  production_chatbot.py                       │  ← composes everything
+                │  11_production_chatbot.py                       │  ← composes everything
                 │  (RAG + memory + caching + guardrails)       │
                 └─────────────────┬────────────────────────────┘
                                   │
@@ -91,7 +91,7 @@ Each layer up the stack is **just composition** of layers below. No new fundamen
 ## The complete production architecture
 
 ```
-                ┌────────────── production_chatbot.py ──────────────────┐
+                ┌────────────── 11_production_chatbot.py ──────────────────┐
                 │                                                       │
   user input    │  INPUT GUARDS  [PII regex | Injection regex | OnTopic]│
        │        │       │ pass                                          │
@@ -253,7 +253,7 @@ The seven one-liners that compress the whole course:
    ├── "remember conversation across calls"      → pattern 6 (MemorySaver) — 08
    ├── "answer from my own documents"            → pattern 7 (RAG) — 09
    ├── "validate inputs and outputs"             → pattern 8 (guardrails) — 10
-   └── "all of the above in one app"             → production_chatbot.py — 11
+   └── "all of the above in one app"             → 11_production_chatbot.py — 11
 ```
 
 ---

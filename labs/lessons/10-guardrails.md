@@ -13,8 +13,8 @@
                                                               design       ○ 20-22 Agriculture
   ▶ 10 GUARDRAILS  ◄═══════ YOU ARE HERE                   ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 11 production capstone    (production_chatbot.py)                       ○ 29-32 Family AI
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 11 production capstone    (11_production_chatbot.py)                       ○ 29-32 Family AI
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** lesson 09 built RAG. Real users will paste their SSN in, try prompt injection, ask off-topic questions, expect graceful refusals. Guardrails are the layer that handles all of that before/after the LLM call.
@@ -25,7 +25,7 @@
 
 | File | Role |
 |---|---|
-| [`safe_rag.py`](../safe_rag.py) | RAG pipeline wrapped in 3 input guardrails + 2 output guardrails, with 5 test inputs |
+| [`10_guardrails.py`](../10_guardrails.py) | RAG pipeline wrapped in 3 input guardrails + 2 output guardrails, with 5 test inputs |
 
 ---
 
@@ -73,7 +73,7 @@ Same shape as middleware in a web framework: pre-handler → handler → post-ha
 
 ## The two layers
 
-### Input guardrails (`safe_rag.py` implements three)
+### Input guardrails (`10_guardrails.py` implements three)
 
 | Guard | What it checks | Cost | Action on failure |
 |---|---|---|---|
@@ -81,7 +81,7 @@ Same shape as middleware in a web framework: pre-handler → handler → post-ha
 | **Prompt injection regex** | *"ignore previous instructions"*, *"you are now an X"*, `<\|...\|>` patterns | free | refuse |
 | **On-topic LLM-judge** | Cheap classifier: *"is this a LangChain/Claude question?"* → one word | 1 small LLM call | refuse |
 
-### Output guardrails (`safe_rag.py` implements two)
+### Output guardrails (`10_guardrails.py` implements two)
 
 | Guard | What it checks | Cost | Action on failure |
 |---|---|---|---|
@@ -118,7 +118,7 @@ Each guard is a function returning `GuardrailResult(passed, reason)`. The driver
 ## Run it
 
 ```bash
-python safe_rag.py
+python 10_guardrails.py
 ```
 
 5 test inputs run automatically, one per guardrail behavior:
@@ -214,7 +214,7 @@ The on-topic judge is a single small LLM call. A clever adversary asks *"What do
 2. **Combine input guards into one LLM-judge call** — one prompt, three checks (PII + topic + injection), one response. Trade latency for slightly weaker precision.
 3. **Make refusals vague** — change refusal messages to *"I can't help with that."* (no guard name). Notice how much harder probing becomes.
 4. **Add confidence scoring** — make faithfulness return `supported_0_to_10`. Refuse only below threshold; pass with warning between thresholds.
-5. **Wrap `agent_chatbot.py` with guardrails** — now you have a guardrailed stateful chatbot. (Or see [lesson 11](11-production-capstone.md) for the full composition.)
+5. **Wrap `08_chatbot_memory.py` with guardrails** — now you have a guardrailed stateful chatbot. (Or see [lesson 11](11-production-capstone.md) for the full composition.)
 
 ---
 
@@ -237,7 +237,7 @@ A: Regex catches the basic ones. For depth, use **Rebuff** (multi-layer: heurist
 **Q: How do I measure faithfulness in production?**
 
 A: Two ways:
-- **Real-time guard** — a faithfulness LLM-judge wrapping each call (what `safe_rag.py` does). Adds ~600ms + tokens.
+- **Real-time guard** — a faithfulness LLM-judge wrapping each call (what `10_guardrails.py` does). Adds ~600ms + tokens.
 - **Offline eval** — Ragas against a golden dataset (Track F evaluation lesson).
 Real-time catches per-request issues; offline catches drift.
 

@@ -78,7 +78,7 @@ Cache is silently extended on every hit — so 5-minute caches usually outlive t
 | Cache read (hit within TTL) | **0.1× ($0.30/MTok)** |
 | Output | unchanged ($15/MTok) |
 
-## Real measurement from production_chatbot.py
+## Real measurement from 11_production_chatbot.py
 
 ```
 scenario             fresh    out   c.read   c.create   cost      vs baseline

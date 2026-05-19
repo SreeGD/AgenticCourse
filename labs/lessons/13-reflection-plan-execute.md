@@ -29,8 +29,8 @@
 
 | File | Role |
 |---|---|
-| [`agent_reflection.py`](../agent_reflection.py) | Writer + critic loop with iteration budget |
-| [`agent_plan_execute.py`](../agent_plan_execute.py) | Planner emits typed Plan; executor runs each step; aggregator combines |
+| [`13_reflection_03_agent_manual.py`](../13_reflection_03_agent_manual.py) | Writer + critic loop with iteration budget |
+| [`13_plan_execute_03_agent_manual.py`](../13_plan_execute_03_agent_manual.py) | Planner emits typed Plan; executor runs each step; aggregator combines |
 
 Both solve the **same task** so you can directly compare outputs and economics.
 
@@ -147,8 +147,8 @@ final = aggregator_pipe.invoke({"task": TASK, "step_results": combined})
 ## Run it
 
 ```bash
-python agent_reflection.py
-python agent_plan_execute.py
+python 13_reflection_03_agent_manual.py
+python 13_plan_execute_03_agent_manual.py
 ```
 
 Both files solve the same task: *"Write a 3-paragraph technical explainer about prompt caching for a senior backend engineer."*
@@ -276,7 +276,7 @@ A: Only if steps are independent (no `depends_on`). For dependent steps (e.g., "
 A: Two options:
 - **Replan after each step** — convert PE into iterative PE (closer to ReAct, more cost, more recovery)
 - **Validate the plan before executing** — wrap the planner in a Reflection loop (critic validates the plan, planner revises)
-The simpler `agent_plan_execute.py` here commits to the upfront plan. Real production systems often add the replan gate.
+The simpler `13_plan_execute_03_agent_manual.py` here commits to the upfront plan. Real production systems often add the replan gate.
 
 **Q: Cost-wise, when does Reflection beat Plan-and-Execute?**
 

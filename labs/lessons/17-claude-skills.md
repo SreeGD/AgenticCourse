@@ -30,7 +30,7 @@
 | [`skills/agenticcourse-rag/SKILL.md`](../skills/agenticcourse-rag/SKILL.md) | RAG canonical pattern + pitfalls — loaded when user asks about retrieval |
 | [`skills/agenticcourse-caching/SKILL.md`](../skills/agenticcourse-caching/SKILL.md) | Prompt caching rules + economics — loaded for caching questions |
 | [`skills/agenticcourse-guardrails/SKILL.md`](../skills/agenticcourse-guardrails/SKILL.md) | Input + output guardrails patterns — loaded for safety questions |
-| [`test_skills.py`](../test_skills.py) | Simulates Claude's triggering: cosine-similarity match between query embedding and skill descriptions |
+| [`17_claude_skills_router.py`](../17_claude_skills_router.py) | Simulates Claude's triggering: cosine-similarity match between query embedding and skill descriptions |
 
 ---
 
@@ -129,7 +129,7 @@ description: Use when the user asks about Retrieval-Augmented Generation, vector
 ## Run it
 
 ```bash
-python test_skills.py
+python 17_claude_skills_router.py
 ```
 
 Expected output:
@@ -241,7 +241,7 @@ Your description's *signal* is at the trade-off: too specific = misses related q
 
 ## Try this
 
-1. **Write a new skill from scratch** — pick a topic you know well (your favorite framework, a debugging pattern, a recipe). Author the SKILL.md, add it to `skills/`, re-run `test_skills.py` with a relevant query. Watch it fire.
+1. **Write a new skill from scratch** — pick a topic you know well (your favorite framework, a debugging pattern, a recipe). Author the SKILL.md, add it to `skills/`, re-run `17_claude_skills_router.py` with a relevant query. Watch it fire.
 2. **Bad-description experiment** — change one of the existing skills' descriptions to be vague ("Use for AI stuff"). Re-run. Watch its triggering accuracy collapse.
 3. **Threshold tuning** — change `SIMILARITY_THRESHOLD` from 0.30 to 0.50. Re-run. Some queries that previously fired now produce "no match." Observe the precision-vs-recall trade-off.
 4. **Add a deliberately overlapping skill** — e.g., a `caching-redis` skill alongside `agenticcourse-caching`. Watch the model handle ambiguity (both might fire on a generic "caching" query).

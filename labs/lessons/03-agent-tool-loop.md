@@ -9,20 +9,20 @@
 ```
 ═══════ PHASE 1: FOUNDATION (12 lessons) ═══════           PHASE 2          PHASE 3
 
-  ✓ 01 model wrapper          (hello.py)                   ○ 13 system     ○ 16-19 Healthcare
-  ✓ 02 LCEL composition       (chain.py)                       design       ○ 20-22 Agriculture
+  ✓ 01 model wrapper          (01_model_wrapper.py)                   ○ 13 system     ○ 16-19 Healthcare
+  ✓ 02 LCEL composition       (02_lcel_chain.py)                       design       ○ 20-22 Agriculture
                                                            ○ 14 red-team   ○ 23-25 Finance
   ▶ 03 AGENT TOOL LOOP  ◄═══════ YOU ARE HERE              ○ 15 AI UX      ○ 26-28 Vidya Karana
                                                                             ○ 29-32 Family AI
-  ○ 04 prompt caching         (agent_lg_cached.py)
-  ○ 05 structured output      (structured.py)
-  ○ 06 parallel chains        (parallel.py)
-  ○ 07 output parsers         (parsers.py)
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 04 prompt caching         (04_prompt_caching.py)
+  ○ 05 structured output      (05_structured_output.py)
+  ○ 06 parallel chains        (06_parallel_chains.py)
+  ○ 07 output parsers         (07_output_parsers.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** lessons 01 + 02 give you one-shot Q&A. Real apps need the model to *do things* — look up data, check the clock, call APIs. The agent loop is the foundation pattern for every agentic system (ReAct, supervisor, RAG-as-tool, MCP, multi-agent).
@@ -33,8 +33,8 @@
 
 | File | Role |
 |---|---|
-| [`agent.py`](../agent.py) | The manual tool loop — hand-written `while True` |
-| [`agent_lg.py`](../agent_lg.py) | Same agent via `create_react_agent` from LangGraph (the framework version) |
+| [`03_agent_manual.py`](../03_agent_manual.py) | The manual tool loop — hand-written `while True` |
+| [`03_agent_framework.py`](../03_agent_framework.py) | Same agent via `create_react_agent` from LangGraph (the framework version) |
 
 ---
 
@@ -103,7 +103,7 @@ The "agent" is the loop that keeps doing (1) → (2) → (1) → (2) until the m
 
 ## The code
 
-### Manual loop (`agent.py`)
+### Manual loop (`03_agent_manual.py`)
 
 ```python
 from langchain_core.tools import tool
@@ -137,7 +137,7 @@ while True:
 print(ai_msg.content)
 ```
 
-### Framework version (`agent_lg.py`)
+### Framework version (`03_agent_framework.py`)
 
 ```python
 from langgraph.prebuilt import create_react_agent
@@ -155,10 +155,10 @@ Same loop, four lines. The framework wins on production hardening (streaming, ch
 
 ```bash
 # Manual loop:
-python agent.py
+python 03_agent_manual.py
 
 # Framework version (recommended for production):
-python agent_lg.py
+python 03_agent_framework.py
 ```
 
 Expected output (excerpt):
@@ -240,7 +240,7 @@ This is why agents are safe by design: every action is your Python code, fully u
 1. **Break a tool intentionally** — `raise ValueError("nope")` in `add`. Watch Claude get the error as a `ToolMessage` and recover.
 2. **Unanswerable question** — *"What's the weather in Tokyo?"* with no weather tool. Claude refuses instead of hallucinating.
 3. **Sequential dependency** — add a `multiply(a, b)` tool, ask *"What is (47+158) × 3?"*. Watch a 3-turn loop: Claude calls `add`, waits for the result, then calls `multiply(a=205, b=3)`.
-4. **Compare manual vs framework** — diff `agent.py` against `agent_lg.py`. Notice how much the loop logic shrinks.
+4. **Compare manual vs framework** — diff `03_agent_manual.py` against `03_agent_framework.py`. Notice how much the loop logic shrinks.
 
 ---
 
@@ -252,7 +252,7 @@ This is why agents are safe by design: every action is your Python code, fully u
 
 ## FAQ
 
-**Q: Why does the manual `agent.py` exist if `agent_lg.py` does the same thing in 5 lines?**
+**Q: Why does the manual `03_agent_manual.py` exist if `03_agent_framework.py` does the same thing in 5 lines?**
 
 A: Pedagogy. Writing the loop by hand once teaches you exactly what `create_react_agent` does inside. After that, when something breaks in production (model in an infinite loop, weird parallel-tool-call interaction, custom retry needed), you know how to debug it.
 
@@ -297,6 +297,6 @@ A: This *is* ReAct — Reason + Act. The model reasons (decides to call a tool),
 
 - **Previous:** [02 — LCEL composition](02-lcel-composition.md)
 - **Next:** [04 — Prompt caching](04-prompt-caching.md)
-- **Productionized loop:** `agent_lg.py` and its caching variant in [04](04-prompt-caching.md)
+- **Productionized loop:** `03_agent_framework.py` and its caching variant in [04](04-prompt-caching.md)
 - **MCP version:** [12 — MCP](12-mcp.md)
 - **All agent patterns side-by-side:** [reference-agentic-patterns](reference-agentic-patterns.md)

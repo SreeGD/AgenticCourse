@@ -1,6 +1,6 @@
 # 12 — MCP (Model Context Protocol)
 
-> **Expose your tools over JSON-RPC so any LLM client — Claude Desktop, Cursor, Continue.dev, your own code — can discover and use them.** Same propose-execute-feedback dance as `agent.py`, just over a wire.
+> **Expose your tools over JSON-RPC so any LLM client — Claude Desktop, Cursor, Continue.dev, your own code — can discover and use them.** Same propose-execute-feedback dance as `03_agent_manual.py`, just over a wire.
 
 ---
 
@@ -24,15 +24,15 @@
 
 | File | Role |
 |---|---|
-| [`mcp_server.py`](../mcp_server.py) | FastMCP server exposing add, count_letters, get_current_time, retrieve_docs |
-| [`mcp_client.py`](../mcp_client.py) | Python client — spawns server, discovers tools, calls each |
+| [`12_mcp_server.py`](../12_mcp_server.py) | FastMCP server exposing add, count_letters, get_current_time, retrieve_docs |
+| [`12_mcp_client.py`](../12_mcp_client.py) | Python client — spawns server, discovers tools, calls each |
 | [`claude-desktop.json`](../claude-desktop.json) | Config snippet to register the server with Claude Desktop |
 
 ---
 
 ## What problem it solves
 
-Your `agent.py` tools (`add`, `count_letters`, `retrieve_docs`) live inside one Python process. Useful for *that* script, useless to:
+Your `03_agent_manual.py` tools (`add`, `count_letters`, `retrieve_docs`) live inside one Python process. Useful for *that* script, useless to:
 - Claude Desktop (a different process)
 - Cursor's chat (a different process, different language even)
 - Your colleague's code (a different machine)
@@ -99,7 +99,7 @@ That's it. Two methods (`tools/list` + `tools/call`) over JSON-RPC. No new abstr
 
 ## The concept
 
-### Server side (mcp_server.py):
+### Server side (12_mcp_server.py):
 
 ```python
 from mcp.server.fastmcp import FastMCP
@@ -121,15 +121,15 @@ if __name__ == "__main__":
     mcp.run()    # listens on stdio
 ```
 
-Same `@tool`-style decorator as `agent.py`. **Schemas auto-generated from type hints + docstrings.**
+Same `@tool`-style decorator as `03_agent_manual.py`. **Schemas auto-generated from type hints + docstrings.**
 
-### Client side (mcp_client.py):
+### Client side (12_mcp_client.py):
 
 ```python
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-server_params = StdioServerParameters(command="python", args=["mcp_server.py"])
+server_params = StdioServerParameters(command="python", args=["12_mcp_server.py"])
 
 async with stdio_client(server_params) as (read, write):
     async with ClientSession(read, write) as session:
@@ -147,7 +147,7 @@ Three calls. That's the entire MCP client API.
 ## Run it
 
 ```bash
-python mcp_client.py
+python 12_mcp_client.py
 ```
 
 Expected output:
@@ -174,10 +174,10 @@ The first three tools are pure Python, sub-10 ms. `retrieve_docs` is slower beca
 
 | # | Method | When to use |
 |---|---|---|
-| **1** | Python client launches it automatically: `python mcp_client.py` | The demo — and how MCP works in production (client owns server lifecycle) |
+| **1** | Python client launches it automatically: `python 12_mcp_client.py` | The demo — and how MCP works in production (client owns server lifecycle) |
 | **2** | Claude Desktop loads it via config | The "click" moment — your tools usable from the GUI |
-| **3** | MCP Inspector: `pip install "mcp[cli]" && mcp dev mcp_server.py` | Interactive debugging in browser |
-| **4** | Raw stdio: `python mcp_server.py` | Protocol debugging |
+| **3** | MCP Inspector: `pip install "mcp[cli]" && mcp dev 12_mcp_server.py` | Interactive debugging in browser |
+| **4** | Raw stdio: `python 12_mcp_server.py` | Protocol debugging |
 
 For #2 (Claude Desktop), edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -186,7 +186,7 @@ For #2 (Claude Desktop), edit `~/Library/Application Support/Claude/claude_deskt
   "mcpServers": {
     "agenticcourse-tools": {
       "command": "/path/to/python",
-      "args": ["/path/to/mcp_server.py"]
+      "args": ["/path/to/12_mcp_server.py"]
     }
   }
 }
@@ -218,9 +218,9 @@ This trips up everyone at least once. Symptom: the client mysteriously fails to 
 
 ---
 
-## MCP vs `agent.py`'s tool loop
+## MCP vs `03_agent_manual.py`'s tool loop
 
-| Aspect | `agent.py` (in-process) | `mcp_server.py` + client |
+| Aspect | `03_agent_manual.py` (in-process) | `12_mcp_server.py` + client |
 |---|---|---|
 | Tool definition | `@tool` decorator | `@mcp.tool()` decorator (~identical) |
 | Tool registry | `tools_by_name` dict | Server's internal dict |
@@ -248,16 +248,16 @@ This trips up everyone at least once. Symptom: the client mysteriously fails to 
 
 ## Try this
 
-1. **Add a new tool** to the server (e.g., `multiply(a, b)`). Restart `mcp_client.py`. Watch it auto-discover the new tool with no client-side changes.
+1. **Add a new tool** to the server (e.g., `multiply(a, b)`). Restart `12_mcp_client.py`. Watch it auto-discover the new tool with no client-side changes.
 2. **Wire Claude Desktop** to your MCP server (config snippet above). Ask it questions that use your tools. The most satisfying moment of this lesson.
 3. **Add an LLM in front of the client** — wrap `session.list_tools()` + `session.call_tool()` in a LangChain `create_react_agent`. Now you have a real MCP-powered agent.
-4. **Try MCP Inspector** — `mcp dev mcp_server.py`. Click through the tools in the browser inspector.
+4. **Try MCP Inspector** — `mcp dev 12_mcp_server.py`. Click through the tools in the browser inspector.
 
 ---
 
 ## Mental model in one line
 
-> **MCP is `agent.py`'s tool-calling, but over a wire. Server defines tools, clients discover and call them. Any client can use any server. The schema is the contract; JSON-RPC is the wire format; stdio is the most common transport.**
+> **MCP is `03_agent_manual.py`'s tool-calling, but over a wire. Server defines tools, clients discover and call them. Any client can use any server. The schema is the contract; JSON-RPC is the wire format; stdio is the most common transport.**
 
 ---
 

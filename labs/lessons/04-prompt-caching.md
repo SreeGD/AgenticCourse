@@ -9,20 +9,20 @@
 ```
 ═══════ PHASE 1: FOUNDATION (12 lessons) ═══════           PHASE 2          PHASE 3
 
-  ✓ 01 model wrapper          (hello.py)                   ○ 13 system     ○ 16-19 Healthcare
-  ✓ 02 LCEL composition       (chain.py)                       design       ○ 20-22 Agriculture
-  ✓ 03 agent tool loop        (agent.py, agent_lg.py)      ○ 14 red-team   ○ 23-25 Finance
+  ✓ 01 model wrapper          (01_model_wrapper.py)                   ○ 13 system     ○ 16-19 Healthcare
+  ✓ 02 LCEL composition       (02_lcel_chain.py)                       design       ○ 20-22 Agriculture
+  ✓ 03 agent tool loop        (03_agent_manual.py, 03_agent_framework.py)      ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
   ▶ 04 PROMPT CACHING  ◄═══════ YOU ARE HERE                                ○ 29-32 Family AI
 
-  ○ 05 structured output      (structured.py)
-  ○ 06 parallel chains        (parallel.py)
-  ○ 07 output parsers         (parsers.py)
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 05 structured output      (05_structured_output.py)
+  ○ 06 parallel chains        (06_parallel_chains.py)
+  ○ 07 output parsers         (07_output_parsers.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** by lesson 3 you've built a tool-calling agent. Token costs grow turn-over-turn because each call re-sends the whole history. Caching is *the* lever to keep multi-turn agents affordable — pairs naturally with everything that follows (chatbots in 08, RAG in 09).
@@ -33,7 +33,7 @@
 
 | File | Role |
 |---|---|
-| [`agent_lg_cached.py`](../agent_lg_cached.py) | Same agent as `agent_lg.py`, plus a cached system prompt — 76% cheaper per warm run |
+| [`04_prompt_caching.py`](../04_prompt_caching.py) | Same agent as `03_agent_framework.py`, plus a cached system prompt — 76% cheaper per warm run |
 
 ---
 
@@ -137,7 +137,7 @@ That's the change. The `cache_control` block tells Anthropic: "Cache the prefix 
 
 ## The code
 
-`agent_lg_cached.py` is the same agent as `agent_lg.py`, plus:
+`04_prompt_caching.py` is the same agent as `03_agent_framework.py`, plus:
 
 - A long system prompt (~1500 tokens — Sonnet's minimum cacheable size is ~1024)
 - A `cache_control` block on that system message
@@ -149,7 +149,7 @@ That's the change. The `cache_control` block tells Anthropic: "Cache the prefix 
 ## Run it
 
 ```bash
-python agent_lg_cached.py
+python 04_prompt_caching.py
 ```
 
 Expected summary (real numbers from a clean run):
@@ -255,7 +255,7 @@ A: Look at `response.usage_metadata.input_token_details`:
 cache_read     = N  → cache hit; N tokens served from cache
 cache_creation = M  → cache write; M tokens written to cache
 ```
-The token report in `agent_lg_cached.py` prints these.
+The token report in `04_prompt_caching.py` prints these.
 
 **Q: How long does the cache live?**
 
@@ -267,7 +267,7 @@ A: Yes — within your API key + org + region. If user A and user B both send a 
 
 **Q: Can I cache the conversation history that grows turn-over-turn?**
 
-A: Yes, but with care. Each turn extends the cached prefix by the previous turn's content. On turn N, you'll see `cache_read = (turn N-1's prefix)` + `cache_creation = (the new turn's content)`. **Incremental caching** — see `agent_lg_cached.py` for the pattern.
+A: Yes, but with care. Each turn extends the cached prefix by the previous turn's content. On turn N, you'll see `cache_read = (turn N-1's prefix)` + `cache_creation = (the new turn's content)`. **Incremental caching** — see `04_prompt_caching.py` for the pattern.
 
 **Q: What's the minimum prompt size to cache?**
 

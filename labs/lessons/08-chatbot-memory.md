@@ -13,10 +13,10 @@
                                                               design       ○ 20-22 Agriculture
   ▶ 08 CHATBOT MEMORY  ◄═══════ YOU ARE HERE               ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 09 RAG                    (rag.py)                                      ○ 29-32 Family AI
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 09 RAG                    (09_rag.py)                                      ○ 29-32 Family AI
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** every agent you've built so far is **stateless** — each call starts from nothing. Real chatbots remember. This is the one missing piece between *"calculator that talks"* and *"chatbot."*
@@ -27,7 +27,7 @@
 
 | File | Role |
 |---|---|
-| [`agent_chatbot.py`](../agent_chatbot.py) | 3-turn conversation in one thread + isolated second thread |
+| [`08_chatbot_memory.py`](../08_chatbot_memory.py) | 3-turn conversation in one thread + isolated second thread |
 
 ---
 
@@ -110,7 +110,7 @@ The `thread_id` is the conversation key. Different `thread_id` = a fresh convers
 ## Run it
 
 ```bash
-python agent_chatbot.py
+python 08_chatbot_memory.py
 ```
 
 Expected output (excerpt):

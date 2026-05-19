@@ -10,16 +10,16 @@
 ═══════ PHASE 1: FOUNDATION (12 lessons) ═══════           PHASE 2          PHASE 3
 
   ✓ 01-04 (foundation)                                      ○ 13 system     ○ 16-19 Healthcare
-  ✓ 05 structured output      (structured.py)                  design       ○ 20-22 Agriculture
-  ✓ 06 parallel chains        (parallel.py)                ○ 14 red-team   ○ 23-25 Finance
+  ✓ 05 structured output      (05_structured_output.py)                  design       ○ 20-22 Agriculture
+  ✓ 06 parallel chains        (06_parallel_chains.py)                ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
   ▶ 07 OUTPUT PARSERS  ◄═══════ YOU ARE HERE                                ○ 29-32 Family AI
 
-  ○ 08 chatbot memory         (agent_chatbot.py)
-  ○ 09 RAG                    (rag.py)
-  ○ 10 guardrails             (safe_rag.py)
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 08 chatbot memory         (08_chatbot_memory.py)
+  ○ 09 RAG                    (09_rag.py)
+  ○ 10 guardrails             (10_guardrails.py)
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** lesson 05 introduced `with_structured_output` — the modern way to get typed output. Parsers are the *older* generation of the same idea (text-based, not tool-call-based). Knowing both lets you pick the right tool, and parsers shine for streaming + simple types.
@@ -30,7 +30,7 @@
 
 | File | Role |
 |---|---|
-| [`parsers.py`](../parsers.py) | Six parsers walked through against one movie review |
+| [`07_output_parsers.py`](../07_output_parsers.py) | Six parsers walked through against one movie review |
 
 ---
 
@@ -115,7 +115,7 @@ The parser's `get_format_instructions()` returns a chunk of text describing the 
 ## Run it
 
 ```bash
-python parsers.py
+python 07_output_parsers.py
 ```
 
 The file walks through 6 parsers on one movie review (Blade Runner 2049). Each section shows the format instructions (where applicable), the LLM call, and the parsed result.
@@ -212,7 +212,7 @@ That's the entire required interface: `parse` and `get_format_instructions`. Now
 
 ## Try this
 
-1. **Replace `StrOutputParser` with `JsonOutputParser`** in `chain.py` — the chain now returns a dict if the prompt asks for JSON.
+1. **Replace `StrOutputParser` with `JsonOutputParser`** in `02_lcel_chain.py` — the chain now returns a dict if the prompt asks for JSON.
 2. **Build a custom YAML parser** — 10 lines; verify it pipes into a chain.
 3. **Wrap a parser with `OutputFixingParser`** — feed it deliberately malformed JSON and watch the second LLM call repair it.
 4. **Compare `PydanticOutputParser` vs `with_structured_output`** on the same task — see the token-efficiency difference in the prompt.

@@ -14,18 +14,18 @@ Each lesson is a runnable example + a markdown walkthrough. The markdown follows
 
 | # | Lesson | File(s) | What you'll learn |
 |---|---|---|---|
-| 01 | [Model Wrapper](lessons/01-model-wrapper.md) | `hello.py` | `ChatAnthropic.invoke()` — the primitive every other lesson builds on |
-| 02 | [LCEL Composition](lessons/02-lcel-composition.md) | `chain.py` | `prompt \| model \| parser` — the sequential pipe |
-| 03 | [Agent Tool Loop](lessons/03-agent-tool-loop.md) | `agent.py`, `agent_lg.py` | Manual + framework versions of propose-execute-feedback |
-| 04 | [Prompt Caching](lessons/04-prompt-caching.md) | `agent_lg_cached.py` | 76% cheaper input via `cache_control` |
-| 05 | [Structured Output](lessons/05-structured-output.md) | `structured.py` | `model.with_structured_output(PydanticModel)` |
-| 06 | [Parallel Chains](lessons/06-parallel-chains.md) | `parallel.py` | `RunnableParallel` — LCEL fan-out |
-| 07 | [Output Parsers](lessons/07-output-parsers.md) | `parsers.py` | Six built-in parsers + custom; vs `with_structured_output` |
-| 08 | [Chatbot Memory](lessons/08-chatbot-memory.md) | `agent_chatbot.py` | `MemorySaver` + `thread_id` |
-| 09 | [RAG](lessons/09-rag.md) | `rag.py` | Load → split → embed → store → retrieve → generate |
-| 10 | [Guardrails](lessons/10-guardrails.md) | `safe_rag.py` | Input + output middleware around the LLM |
-| 11 | [Production Capstone](lessons/11-production-capstone.md) | `production_chatbot.py` | RAG + memory + caching + guardrails composed |
-| 12 | [MCP](lessons/12-mcp.md) | `mcp_server.py`, `mcp_client.py` | Tool sharing over JSON-RPC stdio |
+| 01 | [Model Wrapper](lessons/01-model-wrapper.md) | `01_model_wrapper.py` | `ChatAnthropic.invoke()` — the primitive every other lesson builds on |
+| 02 | [LCEL Composition](lessons/02-lcel-composition.md) | `02_lcel_chain.py` | `prompt \| model \| parser` — the sequential pipe |
+| 03 | [Agent Tool Loop](lessons/03-agent-tool-loop.md) | `03_agent_manual.py`, `03_agent_framework.py` | Manual + framework versions of propose-execute-feedback |
+| 04 | [Prompt Caching](lessons/04-prompt-caching.md) | `04_prompt_caching.py` | 76% cheaper input via `cache_control` |
+| 05 | [Structured Output](lessons/05-structured-output.md) | `05_structured_output.py` | `model.with_structured_output(PydanticModel)` |
+| 06 | [Parallel Chains](lessons/06-parallel-chains.md) | `06_parallel_chains.py` | `RunnableParallel` — LCEL fan-out |
+| 07 | [Output Parsers](lessons/07-output-parsers.md) | `07_output_parsers.py` | Six built-in parsers + custom; vs `with_structured_output` |
+| 08 | [Chatbot Memory](lessons/08-chatbot-memory.md) | `08_chatbot_memory.py` | `MemorySaver` + `thread_id` |
+| 09 | [RAG](lessons/09-rag.md) | `09_rag.py` | Load → split → embed → store → retrieve → generate |
+| 10 | [Guardrails](lessons/10-guardrails.md) | `10_guardrails.py` | Input + output middleware around the LLM |
+| 11 | [Production Capstone](lessons/11-production-capstone.md) | `11_production_chatbot.py` | RAG + memory + caching + guardrails composed |
+| 12 | [MCP](lessons/12-mcp.md) | `12_mcp_server.py`, `12_mcp_client.py` | Tool sharing over JSON-RPC stdio |
 
 ---
 
@@ -54,7 +54,7 @@ Foundation (lessons 01-12) = Phase 1 of [`CURRICULUM.md`](./CURRICULUM.md). Afte
 ## File map
 
 ```
-helloworld/
+labs/
 ├── *.py                    ← runnable examples (one per lesson)
 ├── lessons/                ← lesson markdown (this is what NOTES.md indexes)
 │   ├── 01-model-wrapper.md

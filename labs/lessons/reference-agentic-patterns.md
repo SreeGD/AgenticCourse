@@ -63,7 +63,7 @@ Read this **before Session 2** to map the patterns to code, and **come back** wh
 
 **Examples:** customer support, calculator-with-tools, Q&A over a KB, conversational coding assistant.
 
-**In this repo:** `agent.py`, `agent_lg.py`, `agent_chatbot.py`, `production_chatbot.py` — all ReAct.
+**In this repo:** `03_agent_manual.py`, `03_agent_framework.py`, `08_chatbot_memory.py`, `11_production_chatbot.py` — all ReAct.
 
 ---
 

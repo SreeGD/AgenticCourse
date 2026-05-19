@@ -13,9 +13,9 @@
                                                               design       ○ 20-22 Agriculture
   ▶ 09 RAG  ◄═══════ YOU ARE HERE                          ○ 14 red-team   ○ 23-25 Finance
                                                            ○ 15 AI UX      ○ 26-28 Vidya Karana
-  ○ 10 guardrails             (safe_rag.py)                                 ○ 29-32 Family AI
-  ○ 11 production capstone    (production_chatbot.py)
-  ○ 12 MCP                    (mcp_server.py, mcp_client.py)
+  ○ 10 guardrails             (10_guardrails.py)                                 ○ 29-32 Family AI
+  ○ 11 production capstone    (11_production_chatbot.py)
+  ○ 12 MCP                    (12_mcp_server.py, 12_mcp_client.py)
 ```
 
 **Why this lesson now:** the LLM only knows what was in its training. To answer about *your* PDFs, *your* knowledge base, *your* customer data, you need RAG. This is the single most useful pattern in production AI.
@@ -26,7 +26,7 @@
 
 | File | Role |
 |---|---|
-| [`rag.py`](../rag.py) | Full 6-stage RAG pipeline over your `NOTES.md` + `LEARNINGS.md` (self-referential demo) |
+| [`09_rag.py`](../09_rag.py) | Full 6-stage RAG pipeline over your `NOTES.md` + `LEARNINGS.md` (self-referential demo) |
 
 ---
 
@@ -124,7 +124,7 @@ answer = rag_chain.invoke({"question": "How do I add memory to a LangChain agent
 ## Run it
 
 ```bash
-python rag.py
+python 09_rag.py
 ```
 
 The file walks through each of the 6 stages, dissects what's inside the vector store (id, text, metadata, vector), then runs 3 demo questions over the corpus.

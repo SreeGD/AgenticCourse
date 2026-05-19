@@ -153,7 +153,7 @@ Per gap analysis against Brij Kishore Pandey's 9-Concepts + RAG-Architectures + 
 ## File map
 
 ```
-helloworld/
+labs/
 ├── *.py                    ← runnable examples (one per built lesson)
 ├── lessons/                ← per-topic markdown walkthroughs (15 done so far)
 ├── NOTES.md                ← index into lessons/
