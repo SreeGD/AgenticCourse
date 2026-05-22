@@ -176,6 +176,10 @@ class PlanningGoals(BaseModel):
         "transition_to_organic",
         "sustainability_focused",
     ] = "diversification_resilience"
+    # Risk profile drives multi-option generation: conservative = lower risk,
+    # smaller perennial bets, more food security; balanced = mid; aggressive =
+    # bigger perennial bets, more exotic crops, larger upside / variance.
+    risk_profile: Literal["conservative", "balanced", "aggressive"] = "balanced"
     secondary_goals: list[str] = Field(default_factory=list)
     planning_horizon_years: Literal[1, 3, 5, 10] = 10
 
@@ -296,6 +300,41 @@ class YearlyCashFlow(BaseModel):
     revenue_inr_range: str
     net_inr_range: str
     notes: str = ""
+
+
+class PlanCritique(BaseModel):
+    """Devil's advocate per plan — honest about why the plan might NOT work.
+    Same shape Session 19's red-team auditor uses, applied to a farm plan."""
+    why_it_might_work: list[str] = Field(
+        description="3-5 concrete reasons this plan is likely to succeed in THIS farmer's context.")
+    why_it_might_NOT_work: list[str] = Field(
+        description="3-5 honest failure modes — concrete things that could break this plan, "
+                    "specific to this farmer's profile (not generic advice).")
+    key_assumptions: list[str] = Field(
+        description="3-5 explicit assumptions the plan makes — what would invalidate it if it changed "
+                    "(market prices stay in current band, no disease outbreak, KVK support available, etc.).")
+    biggest_risk: str = Field(description="One sentence — the single largest risk to this plan.")
+    overall_confidence: float = Field(ge=0.0, le=1.0,
+        description="0.0-1.0 calibrated confidence the plan delivers the stated goals over the planning horizon. "
+                    "Be honest — over-confidence is the failure mode.")
+
+
+class PlanOption(BaseModel):
+    """One of N plans presented to the farmer — comes with its critique."""
+    risk_profile: Literal["conservative", "balanced", "aggressive"]
+    plan: "FarmPlan"
+    critique: PlanCritique
+
+
+class FarmPlanResult(BaseModel):
+    """Multi-option output — 1 or 3 plans, with a recommendation."""
+    farmer_id: str
+    generated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    profile_summary: str
+    options: list[PlanOption]
+    recommended_option: Literal["conservative", "balanced", "aggressive"]
+    recommendation_reasoning: str = Field(
+        description="One paragraph — why this risk profile fits THIS farmer's profile + goals + context.")
 
 
 class FarmPlan(BaseModel):
@@ -647,6 +686,352 @@ def generate_farm_plan_multicall(profile: FarmProfile, goals: PlanningGoals,
         disclaimers=section3.disclaimers,
     )
     return plan
+
+
+# =====================================================================
+# LangGraph engine — multi-call as a StateGraph
+#
+# Same 3 LLM calls as the linear multi-call path, but expressed as a graph:
+# core → sustainability → cashflow → assemble → critique. Benefits:
+#   - graph.stream() emits per-node events for UI progress display
+#   - SqliteSaver checkpointer persists state per node (resume on crash)
+#   - easy to add new nodes (eval, vision diagnostic in Session 23, etc.)
+#   - per-node retry logic is local
+#
+# The critique node is the devil's advocate — honest about why the plan
+# might NOT work, not just why it will. Same red-team discipline as
+# Session 19, applied to farm plans.
+# =====================================================================
+
+from typing import TypedDict, Annotated
+from operator import add as _list_add
+
+try:
+    from langgraph.graph import StateGraph, START, END
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    _LANGGRAPH_AVAILABLE = True
+except ImportError:
+    _LANGGRAPH_AVAILABLE = False
+
+
+CHECKPOINT_DB_PATH = HERE / "farm_plans" / "checkpoints.sqlite"
+
+
+def _get_checkpointer():
+    """Lazy-initialize SqliteSaver. Returns None if langgraph not installed."""
+    if not _LANGGRAPH_AVAILABLE:
+        return None
+    return SqliteSaver.from_conn_string(str(CHECKPOINT_DB_PATH))
+
+
+class PlanGraphState(TypedDict, total=False):
+    """State threading through the per-option planning graph."""
+    profile: FarmProfile
+    goals: PlanningGoals
+    risk_profile: str        # "conservative" | "balanced" | "aggressive"
+    # LLM-call outputs
+    core: CorePlanSection
+    sustainability: SustainabilitySection
+    cashflow: CashFlowSection
+    # Assembled artifacts
+    plan: FarmPlan
+    critique: PlanCritique
+
+
+def _risk_profile_instruction(risk_profile: str) -> str:
+    """Bias prompt language per risk profile."""
+    return {
+        "conservative": (
+            "RISK PROFILE: CONSERVATIVE. Bias toward: food security first, low Year-1 investment, "
+            "more short-term cash crops (millets, pulses), small perennial pilots only "
+            "(0.25-0.5 ac), avoid exotic / experimental crops. Optimize for stable income, "
+            "not maximum upside."
+        ),
+        "balanced": (
+            "RISK PROFILE: BALANCED. Mix of short-term cash crops, established perennials "
+            "(lemon, mango), and 1-2 small exotic pilots. Standard MIDH-grade investments. "
+            "Optimize for stable income + asset building."
+        ),
+        "aggressive": (
+            "RISK PROFILE: AGGRESSIVE. Lean into perennials + exotic high-value crops "
+            "(dragon fruit, avocado, pomegranate, dates). Larger Year-1 investment within "
+            "the cap. Optimize for upside; accept higher variance + longer payback windows. "
+            "Multiple pilots OK."
+        ),
+    }.get(risk_profile, "")
+
+
+# ---------- LangGraph nodes ----------
+
+def _node_core(state: PlanGraphState) -> dict:
+    profile = state["profile"]
+    goals = state["goals"]
+    risk_profile = state.get("risk_profile", goals.risk_profile)
+
+    model = _make_planner_model()
+    planner = model.with_structured_output(CorePlanSection)
+    prompt = (
+        f"{_risk_profile_instruction(risk_profile)}\n\n"
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        "Generate the CORE plan section: plan_summary, farmer_profile_inferred, "
+        "crops (3-6 with variety-level detail), livestock, apiary, "
+        "risk_diversification_strategy. Match crops to climate / soil / wildlife / labor / "
+        "investment. Use the knowledge base for variety, supplier, scheme references."
+    )
+    result = _call_with_retry(planner, _build_system_prompt(), prompt,
+                              label=f"{risk_profile}:core")
+    return {"core": result}
+
+
+def _node_sustainability(state: PlanGraphState) -> dict:
+    profile = state["profile"]
+    goals = state["goals"]
+    core = state["core"]
+    risk_profile = state.get("risk_profile", goals.risk_profile)
+
+    model = _make_planner_model()
+    planner = model.with_structured_output(SustainabilitySection)
+    prompt = (
+        f"{_risk_profile_instruction(risk_profile)}\n\n"
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        f"CORE PLAN (do not contradict — extend with):\n{core.model_dump_json(indent=2)}\n\n"
+        "Generate SUSTAINABILITY + LOGISTICS: 3-6 sustainability_practices (ZBNF, drip, "
+        "biogas, agroforestry, etc.), organic_transition_path (if applicable), "
+        "govt_subsidies_to_pursue, suppliers_to_contact, market_channels_to_develop."
+    )
+    result = _call_with_retry(planner, _build_system_prompt(), prompt,
+                              label=f"{risk_profile}:sustainability")
+    return {"sustainability": result}
+
+
+def _node_cashflow(state: PlanGraphState) -> dict:
+    profile = state["profile"]
+    goals = state["goals"]
+    core = state["core"]
+    sust = state["sustainability"]
+    risk_profile = state.get("risk_profile", goals.risk_profile)
+    horizon = goals.planning_horizon_years
+
+    model = _make_planner_model()
+    planner = model.with_structured_output(CashFlowSection)
+    prompt = (
+        f"{_risk_profile_instruction(risk_profile)}\n\n"
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        f"CORE PLAN:\n{core.model_dump_json(indent=2)}\n\n"
+        f"SUSTAINABILITY + LOGISTICS:\n{sust.model_dump_json(indent=2)}\n\n"
+        f"Generate CASH FLOW + ACTIONS for the {horizon}-year horizon. "
+        f"year_by_year_cash_flow MUST have entries Y1..Y{horizon} reflecting perennial "
+        "breakeven timelines (lemon Y4, avocado Y5, dragon fruit Y2-3). "
+        "immediate_next_steps (3-6 30-day actions), pilot_recommendation, disclaimers."
+    )
+    result = _call_with_retry(planner, _build_system_prompt(), prompt,
+                              label=f"{risk_profile}:cashflow")
+    return {"cashflow": result}
+
+
+def _node_assemble(state: PlanGraphState) -> dict:
+    """Deterministic stitching — no LLM."""
+    profile = state["profile"]
+    core = state["core"]
+    sust = state["sustainability"]
+    cf = state["cashflow"]
+    plan = FarmPlan(
+        plan_id=f"plan_{uuid4().hex[:8]}",
+        farmer_id=profile.farmer_id,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        plan_summary=core.plan_summary,
+        farmer_profile_inferred=core.farmer_profile_inferred,
+        crops=core.crops,
+        livestock=core.livestock,
+        apiary=core.apiary,
+        sustainability_practices=sust.sustainability_practices,
+        year_by_year_cash_flow=cf.year_by_year_cash_flow,
+        risk_diversification_strategy=core.risk_diversification_strategy,
+        organic_transition_path=sust.organic_transition_path,
+        govt_subsidies_to_pursue=sust.govt_subsidies_to_pursue,
+        suppliers_to_contact=sust.suppliers_to_contact,
+        market_channels_to_develop=sust.market_channels_to_develop,
+        immediate_next_steps=cf.immediate_next_steps,
+        pilot_recommendation=cf.pilot_recommendation,
+        disclaimers=cf.disclaimers,
+    )
+    return {"plan": plan}
+
+
+def _node_critique(state: PlanGraphState) -> dict:
+    """Devil's advocate — honest critique of the just-assembled plan."""
+    profile = state["profile"]
+    goals = state["goals"]
+    plan = state["plan"]
+    risk_profile = state.get("risk_profile", goals.risk_profile)
+
+    model = _make_planner_model()
+    planner = model.with_structured_output(PlanCritique)
+    prompt = (
+        f"You are playing DEVIL'S ADVOCATE. The following farm plan was generated for "
+        f"a {risk_profile} risk profile. Your job is to find honest failure modes — "
+        f"NOT to validate the plan. Be specific to THIS farmer's context (climate, "
+        f"soil, wildlife, labor, market access), NOT generic 'farming is risky' advice.\n\n"
+        f"FARMER PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLAN:\n{plan.model_dump_json(indent=2)}\n\n"
+        f"Generate PlanCritique. Be specific. Be honest. Over-confidence is the failure "
+        f"mode — calibrate overall_confidence to reflect real-world delivery risk over "
+        f"the {goals.planning_horizon_years}-year horizon."
+    )
+    result = _call_with_retry(planner, _build_system_prompt(), prompt,
+                              label=f"{risk_profile}:critique")
+    return {"critique": result}
+
+
+def build_planner_graph(checkpointer=None):
+    """Build the per-option planning StateGraph.
+
+    Linear: core → sustainability → cashflow → assemble → critique.
+    """
+    if not _LANGGRAPH_AVAILABLE:
+        raise RuntimeError("langgraph not installed — `pip install langgraph`")
+
+    g = StateGraph(PlanGraphState)
+    g.add_node("core", _node_core)
+    g.add_node("sustainability", _node_sustainability)
+    g.add_node("cashflow", _node_cashflow)
+    g.add_node("assemble", _node_assemble)
+    g.add_node("critique", _node_critique)
+
+    g.add_edge(START, "core")
+    g.add_edge("core", "sustainability")
+    g.add_edge("sustainability", "cashflow")
+    g.add_edge("cashflow", "assemble")
+    g.add_edge("assemble", "critique")
+    g.add_edge("critique", END)
+
+    return g.compile(checkpointer=checkpointer)
+
+
+def generate_plan_via_graph(profile: FarmProfile, goals: PlanningGoals,
+                             risk_profile: str | None = None,
+                             thread_id: str | None = None,
+                             use_checkpointer: bool = True) -> tuple[FarmPlan, PlanCritique]:
+    """Run the planner StateGraph once. Returns (plan, critique).
+
+    Pass thread_id to resume a crashed run (SqliteSaver restores per-node state).
+    """
+    checkpointer = _get_checkpointer() if use_checkpointer else None
+    if checkpointer is not None:
+        with checkpointer as cp:
+            graph = build_planner_graph(checkpointer=cp)
+            thread_id = thread_id or f"plan_{uuid4().hex[:8]}"
+            config = {"configurable": {"thread_id": thread_id}}
+            initial = {
+                "profile": profile,
+                "goals": goals,
+                "risk_profile": risk_profile or goals.risk_profile,
+            }
+            final = graph.invoke(initial, config=config)
+    else:
+        graph = build_planner_graph(checkpointer=None)
+        initial = {
+            "profile": profile,
+            "goals": goals,
+            "risk_profile": risk_profile or goals.risk_profile,
+        }
+        final = graph.invoke(initial)
+    return final["plan"], final["critique"]
+
+
+def stream_plan_via_graph(profile: FarmProfile, goals: PlanningGoals,
+                          risk_profile: str | None = None,
+                          thread_id: str | None = None):
+    """Generator yielding per-node events for UI streaming progress.
+
+    Each yielded value is a dict {node_name: state_delta}.
+    """
+    checkpointer = _get_checkpointer()
+    with checkpointer as cp:
+        graph = build_planner_graph(checkpointer=cp)
+        thread_id = thread_id or f"plan_{uuid4().hex[:8]}"
+        config = {"configurable": {"thread_id": thread_id}}
+        initial = {
+            "profile": profile,
+            "goals": goals,
+            "risk_profile": risk_profile or goals.risk_profile,
+        }
+        for event in graph.stream(initial, config=config, stream_mode="updates"):
+            yield event
+
+
+def generate_three_options(profile: FarmProfile,
+                           goals: PlanningGoals) -> FarmPlanResult:
+    """Generate 3 plans — conservative + balanced + aggressive — plus
+    a recommendation pick. Sequential for simplicity; ~18-25 min total.
+
+    For parallel execution (~6-9 min) use asyncio with the async graph
+    variants (future work — current graph is sync).
+    """
+    options: list[PlanOption] = []
+    for rp in ["conservative", "balanced", "aggressive"]:
+        print(f"\n[engine] === Generating {rp} option ===")
+        plan, critique = generate_plan_via_graph(profile, goals, risk_profile=rp)
+        options.append(PlanOption(risk_profile=rp, plan=plan, critique=critique))
+
+    # Recommend the option with highest critique.overall_confidence,
+    # tie-broken by primary goal alignment with risk profile.
+    best = max(options, key=lambda o: o.critique.overall_confidence)
+    goal_alignment = {
+        "subsistence_first":              "conservative",
+        "stable_monthly_income":          "conservative",
+        "diversification_resilience":     "balanced",
+        "transition_to_organic":          "balanced",
+        "sustainability_focused":         "balanced",
+        "asset_building_long_term":       "aggressive",
+        "max_revenue_per_acre":           "aggressive",
+    }
+    suggested = goal_alignment.get(goals.primary_goal, "balanced")
+    # If the goal-aligned option's confidence is within 0.05 of the best,
+    # pick the goal-aligned one.
+    goal_option = next(o for o in options if o.risk_profile == suggested)
+    if goal_option.critique.overall_confidence >= best.critique.overall_confidence - 0.05:
+        recommended = suggested
+        reasoning = (
+            f"The {suggested} option aligns with your primary goal "
+            f"('{goals.primary_goal}') and its overall confidence "
+            f"({goal_option.critique.overall_confidence:.2f}) is within tolerance of "
+            f"the highest-confidence option ({best.risk_profile}, "
+            f"{best.critique.overall_confidence:.2f})."
+        )
+    else:
+        recommended = best.risk_profile
+        reasoning = (
+            f"The {best.risk_profile} option has notably higher confidence "
+            f"({best.critique.overall_confidence:.2f}) than the goal-aligned "
+            f"{suggested} option ({goal_option.critique.overall_confidence:.2f}). "
+            f"Consider this option even though it differs from the typical "
+            f"{goals.primary_goal} mapping."
+        )
+
+    return FarmPlanResult(
+        farmer_id=profile.farmer_id,
+        profile_summary=options[0].plan.farmer_profile_inferred,
+        options=options,
+        recommended_option=recommended,
+        recommendation_reasoning=reasoning,
+    )
+
+
+def save_plan_result(result: FarmPlanResult) -> Path:
+    """Save the multi-option result + each constituent plan."""
+    farmer_dir = PLANS_DIR / result.farmer_id
+    farmer_dir.mkdir(exist_ok=True)
+    # Save the FarmPlanResult itself
+    result_path = farmer_dir / f"result_{uuid4().hex[:8]}.json"
+    result_path.write_text(result.model_dump_json(indent=2))
+    # Save each plan individually as well (compat with load_plan)
+    for opt in result.options:
+        save_plan(opt.plan)
+    return result_path
 
 
 def generate_farm_plan(profile: FarmProfile, goals: PlanningGoals,

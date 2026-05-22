@@ -1,54 +1,85 @@
 {
   "farmer_id": "sample_jangaon",
-  "name": "Sunitha Reddy (sample)",
-  "village": "Bachannapeta",
+  "name": "Indiara Reddy (sample)",
+  "village": "Neermala",
   "district": "Jangaon",
   "state": "Telangana",
   "pincode": "506167",
-  "total_acres": 8.0,
+  "total_acres": 10.0,
   "parcel_count": 1,
-  "soil_types_present": ["black_cotton_regur"],
-  "soil_test_done": true,
+  "soil_types_present": [
+    "black_cotton_regur",
+    "saline_alkaline"
+  ],
+  "soil_test_done": false,
   "soil_test_data": {
     "ph": 7.9,
-    "nitrogen_kg_ha": 220,
-    "phosphorus_kg_ha": 18,
-    "potassium_kg_ha": 280,
+    "nitrogen_kg_ha": 220.0,
+    "phosphorus_kg_ha": 18.0,
+    "potassium_kg_ha": 280.0,
     "organic_carbon_pct": 0.55,
     "notes": "Heavy black soil; alkaline tendency; high potassium"
   },
-  "water_sources": ["bore_well"],
-  "irrigation_infrastructure": ["drip"],
-  "drought_history_years": [2019, 2023],
+  "water_sources": [
+    "bore_well"
+  ],
+  "irrigation_infrastructure": [
+    "drip"
+  ],
+  "drought_history_years": [
+    2019,
+    2023
+  ],
   "existing_crops": [
-    {"crop_name": "Cotton", "variety": "Bt cotton", "acres": 5.0, "year_planted": 2025, "condition": "stable"},
-    {"crop_name": "Chilli", "variety": "Teja", "acres": 2.0, "year_planted": 2025, "condition": "thriving"}
+    {
+      "crop_name": "Cotton",
+      "variety": "Bt cotton",
+      "acres": 5.0,
+      "year_planted": 2025,
+      "age_years": null,
+      "condition": "stable"
+    },
+    {
+      "crop_name": "Chilli",
+      "variety": "Teja",
+      "acres": 2.0,
+      "year_planted": 2025,
+      "age_years": null,
+      "condition": "thriving"
+    }
   ],
   "existing_livestock": [
-    {"type": "buffalo", "breed": "Murrah", "count": 2}
+    {
+      "type": "buffalo",
+      "breed": "Murrah",
+      "count": 2
+    }
   ],
   "existing_apiary": null,
-  "adult_workers": 2,
-  "children": 1,
-  "hired_labor_available": "year_round_hired",
-  "wildlife_present": ["none"],
-  "forest_proximity_km": 12.0,
+  "adult_workers": 1,
+  "children": 2,
+  "hired_labor_available": "seasonal_hired",
+  "wildlife_present": [
+    "none",
+    "peacocks"
+  ],
+  "forest_proximity_km": 50.0,
   "previous_crop_losses_to_wildlife": [],
-  "investment_capacity_inr": 800000,
-  "primary_income_source": "farming_only",
+  "investment_capacity_inr": 500000,
+  "primary_income_source": "salary_with_farm_side",
   "has_drip": true,
-  "has_storage": true,
+  "has_storage": false,
   "has_processing_unit": false,
   "has_cold_storage": false,
   "pm_kisan_enrolled": true,
   "kcc_enrolled": true,
   "pmfby_enrolled": true,
-  "soil_health_card": true,
+  "soil_health_card": false,
   "rythu_bandhu_received": true,
-  "organic_interest": "none",
+  "organic_interest": "transitioning",
   "zbnf_practitioner": false,
   "open_to_agroforestry": true,
   "primary_language": "Telugu",
   "created_at": "2026-05-21T00:00:00+00:00",
-  "updated_at": "2026-05-21T00:00:00+00:00"
+  "updated_at": "2026-05-22T10:45:22.596572+00:00"
 }

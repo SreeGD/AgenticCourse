@@ -375,19 +375,76 @@ def page_generate():
                f"investment cap=₹{g.max_investment_inr:,} · dairy={g.include_dairy} · "
                f"apiary={g.include_apiary}")
 
-    if st.button("Generate plan", type="primary"):
-        with st.spinner("Calling Claude · embedding 7K-token knowledge base · "
-                        "generating structured plan (30-60s)..."):
+    mode = st.radio(
+        "Generation mode",
+        ["Single plan (pick a risk profile, ~6-9 min)",
+         "Compare 3 options (conservative + balanced + aggressive, ~18-25 min)"],
+        index=0,
+    )
+
+    if mode.startswith("Single"):
+        risk_profile = st.selectbox(
+            "Risk profile",
+            ["conservative", "balanced", "aggressive"],
+            index=["conservative", "balanced", "aggressive"].index(g.risk_profile),
+            help="Conservative = food security + small pilots. "
+                 "Balanced = mid (standard recommendation). "
+                 "Aggressive = larger perennial + exotic bets."
+        )
+        if st.button("Generate plan", type="primary"):
+            g.risk_profile = risk_profile
+            status = st.status(
+                f"Generating {risk_profile} plan (LangGraph: 5 nodes, 4 LLM calls)...",
+                expanded=True,
+            )
             try:
-                plan = engine.generate_farm_plan(p, g)
+                events = list(engine.stream_plan_via_graph(p, g, risk_profile=risk_profile))
+                for ev in events:
+                    for node, delta in ev.items():
+                        status.write(f"✓ Node `{node}` done")
+                # graph state is in checkpointer; pull final from the last event
+                plan_data = next((d["plan"] for d in (e for e in events for k, e in [(k, v) for k, v in e.items()] if "plan" in e) if "plan" in d), None)
+                # Simpler: re-run via invoke to get final
+                plan, critique = engine.generate_plan_via_graph(
+                    p, g, risk_profile=risk_profile, use_checkpointer=False
+                )
                 engine.save_plan(plan)
                 score = engine.score_sustainability(plan)
                 st.session_state.current_plan = plan
+                st.session_state.current_critique = critique
                 st.session_state.current_score = score
-                st.success(f"Plan generated: {plan.plan_id}  ·  "
-                           f"Sustainability score: {score.composite_0_to_100:.1f}/100")
-                st.info("Switch to **View Plan** in the sidebar.")
+                st.session_state.current_result = None  # clear multi-option
+                status.update(label=f"Plan {plan.plan_id} ready · score {score.composite_0_to_100:.1f}/100", state="complete")
+                st.success(f"Confidence: {critique.overall_confidence:.2f}  ·  "
+                           f"Biggest risk: {critique.biggest_risk}")
+                st.info("Switch to **View Plan** to see crops, livestock, cash flow, and devil's advocate critique.")
             except Exception as e:
+                status.update(state="error")
+                st.error(f"Failed: {type(e).__name__}: {e}")
+    else:
+        if st.button("Generate 3 options", type="primary"):
+            status = st.status("Generating 3 plans (conservative → balanced → aggressive)...", expanded=True)
+            try:
+                status.write("**Conservative** — running 4 LLM calls...")
+                result = engine.generate_three_options(p, g)
+                for opt in result.options:
+                    status.write(f"✓ {opt.risk_profile.title()} option: "
+                                 f"{len(opt.plan.crops)} crops · "
+                                 f"confidence {opt.critique.overall_confidence:.2f}")
+                engine.save_plan_result(result)
+                st.session_state.current_result = result
+                st.session_state.current_plan = next(
+                    o.plan for o in result.options if o.risk_profile == result.recommended_option
+                )
+                st.session_state.current_critique = next(
+                    o.critique for o in result.options if o.risk_profile == result.recommended_option
+                )
+                st.session_state.current_score = engine.score_sustainability(st.session_state.current_plan)
+                status.update(label=f"3 plans ready · recommended: {result.recommended_option}", state="complete")
+                st.info(f"**Recommendation**: {result.recommended_option} option. {result.recommendation_reasoning}")
+                st.info("Switch to **View Plan** to compare options side-by-side.")
+            except Exception as e:
+                status.update(state="error")
                 st.error(f"Failed: {type(e).__name__}: {e}")
 
 
@@ -417,7 +474,31 @@ def page_view_plan():
     if not score:
         score = engine.score_sustainability(plan)
 
-    tabs = st.tabs([
+    # Multi-option panel above the tabs (if we have 3-option result)
+    result: engine.FarmPlanResult | None = st.session_state.get("current_result")
+    if result is not None:
+        st.subheader("3-option comparison")
+        st.info(f"**Recommended**: {result.recommended_option}  ·  "
+                f"{result.recommendation_reasoning}")
+        cmp_cols = st.columns(3)
+        for i, opt in enumerate(result.options):
+            with cmp_cols[i]:
+                emoji = "🏆 " if opt.risk_profile == result.recommended_option else ""
+                st.markdown(f"### {emoji}{opt.risk_profile.title()}")
+                st.metric("Confidence", f"{opt.critique.overall_confidence:.2f}")
+                st.caption(f"{len(opt.plan.crops)} crops · "
+                           f"{len(opt.plan.livestock)} livestock")
+                st.caption(f"**Biggest risk**: {opt.critique.biggest_risk[:80]}...")
+                if st.button(f"View this", key=f"view_{opt.risk_profile}"):
+                    st.session_state.current_plan = opt.plan
+                    st.session_state.current_critique = opt.critique
+                    st.session_state.current_score = engine.score_sustainability(opt.plan)
+                    st.rerun()
+        st.divider()
+
+    critique: engine.PlanCritique | None = st.session_state.get("current_critique")
+    has_critique = critique is not None
+    tab_labels = [
         "Summary",
         f"Crops ({len(plan.crops)})",
         f"Livestock ({len(plan.livestock)})",
@@ -427,7 +508,10 @@ def page_view_plan():
         "Subsidies & Suppliers",
         "Next Steps",
         "Download",
-    ])
+    ]
+    if has_critique:
+        tab_labels.insert(1, "🎯 Devil's Advocate")
+    tabs = st.tabs(tab_labels)
 
     with tabs[0]:
         st.subheader("Plan Summary")
@@ -454,7 +538,30 @@ def page_view_plan():
         if plan.disclaimers:
             st.warning("**Disclaimers**\n\n" + "\n\n".join(plan.disclaimers))
 
-    with tabs[1]:
+    # Critique tab (only present when critique exists)
+    next_tab_idx = 1
+    if has_critique:
+        with tabs[1]:
+            st.subheader("🎯 Devil's Advocate Critique")
+            st.metric("Overall confidence", f"{critique.overall_confidence:.2f}",
+                      help="Honest probability this plan delivers stated goals.")
+            st.error(f"**Biggest risk**: {critique.biggest_risk}")
+            cols = st.columns(2)
+            with cols[0]:
+                st.markdown("### ✅ Why it might work")
+                for x in critique.why_it_might_work:
+                    st.markdown(f"- {x}")
+            with cols[1]:
+                st.markdown("### ❌ Why it might NOT work")
+                for x in critique.why_it_might_NOT_work:
+                    st.markdown(f"- {x}")
+            st.divider()
+            st.markdown("### 📋 Key assumptions")
+            for x in critique.key_assumptions:
+                st.markdown(f"- {x}")
+        next_tab_idx = 2
+
+    with tabs[next_tab_idx]:
         st.subheader("Crops")
         if plan.crops:
             df = pd.DataFrame([{
@@ -489,8 +596,9 @@ def page_view_plan():
                         st.write("**Suppliers:** " + ", ".join(c.suppliers_known))
                     st.caption(f"Confidence: self={c.confidence_self:.2f} · meta={c.confidence_meta:.2f} · "
                                f"exotic={c.is_exotic_high_value} · pollinator-friendly={c.pollinator_friendly}")
+    next_tab_idx += 1
 
-    with tabs[2]:
+    with tabs[next_tab_idx]:
         st.subheader("Livestock")
         if not plan.livestock:
             st.info("No livestock in this plan.")
@@ -507,8 +615,9 @@ def page_view_plan():
                 if l.integration_with_crops:
                     st.write(f"**{l.type} {l.breed} integration:** " +
                              ", ".join(l.integration_with_crops))
+    next_tab_idx += 1
 
-    with tabs[3]:
+    with tabs[next_tab_idx]:
         if plan.apiary:
             a = plan.apiary
             st.subheader("Apiary")
@@ -521,8 +630,9 @@ def page_view_plan():
             st.caption(f"MIDH subsidy eligible: {a.midh_subsidy_eligibility}")
         else:
             st.info("No apiary in this plan.")
+    next_tab_idx += 1
 
-    with tabs[4]:
+    with tabs[next_tab_idx]:
         st.subheader("Sustainability Practices")
         for p in plan.sustainability_practices:
             with st.expander(p.practice.replace("_", " ").title()):
@@ -538,8 +648,9 @@ def page_view_plan():
             st.subheader("To improve the score")
             for r in score.recommendations:
                 st.write(f"- {r}")
+    next_tab_idx += 1
 
-    with tabs[5]:
+    with tabs[next_tab_idx]:
         st.subheader("10-Year Cash Flow")
         if plan.year_by_year_cash_flow:
             df = pd.DataFrame([{
@@ -550,8 +661,9 @@ def page_view_plan():
                 "Notes": y.notes,
             } for y in plan.year_by_year_cash_flow])
             st.dataframe(df, use_container_width=True, hide_index=True)
+    next_tab_idx += 1
 
-    with tabs[6]:
+    with tabs[next_tab_idx]:
         cols = st.columns(2)
         with cols[0]:
             st.subheader("Govt subsidies to pursue")
@@ -564,13 +676,15 @@ def page_view_plan():
             st.subheader("Market channels to develop")
             for m in plan.market_channels_to_develop:
                 st.write(f"- {m}")
+    next_tab_idx += 1
 
-    with tabs[7]:
+    with tabs[next_tab_idx]:
         st.subheader("Next 30 Days — Action Items")
         for s in plan.immediate_next_steps:
             st.checkbox(s, key=f"todo_{s}")
+    next_tab_idx += 1
 
-    with tabs[8]:
+    with tabs[next_tab_idx]:
         st.subheader("Download")
         md = engine.render_plan_markdown(plan, score)
         st.download_button(
