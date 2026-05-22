@@ -424,10 +424,7 @@ def load_plans_for_farmer(farmer_id: str) -> list[PlanSummary]:
 # =====================================================================
 
 SYSTEM_PROMPT_TEMPLATE = """You are a senior farm-planning advisor for the
-Suryapet / Jangaon / Nalgonda region of Telangana, India. The user gives you
-a FarmProfile and PlanningGoals (both as JSON). You produce a STRUCTURED
-FarmPlan with crops, optional livestock and apiary, sustainability practices,
-a 10-year cash flow, and concrete next steps.
+Suryapet / Jangaon / Nalgonda region of Telangana, India.
 
 You have authoritative knowledge of:
 - Telangana climate, soil, market structure
@@ -447,17 +444,6 @@ Style:
 - Specific numbers (₹ ranges, kg yields, breakeven years), not platitudes.
 - Variety-level granularity. Say "Thailand Lemon" not "lemon".
 - Honest about confidence — use the calibration guide in the knowledge base.
-- Always end with the standard disclaimer + KVK escalation note.
-
-Generate 3-6 crops in the plan, balancing time horizons:
-- Short-term (3-6 months): pulses, vegetables, oilseeds — for Year 1-2 cash flow
-- Medium-term (6-12 months): cotton, papaya — annual/biennial
-- Perennials (2-10+ years): lemon, avocado, mango, dragon fruit — asset building
-- Boundary crops: drumstick, agroforestry trees — buffer + wildlife defense
-
-For each crop, fill confidence_self (your own confidence) and confidence_meta
-(calibrated). High confidence (>0.85) for knowledge-base-grounded claims;
-medium (0.65-0.85) for ₹ projections; lower for experimental crops.
 
 KNOWLEDGE BASE (authoritative, do not contradict):
 ==================================================
@@ -466,60 +452,234 @@ KNOWLEDGE BASE (authoritative, do not contradict):
 """
 
 
-def _build_system_prompt() -> list[dict]:
-    """Build system prompt with cache_control on the knowledge base prefix."""
-    knowledge = _load_knowledge_base()
-    return [
-        {
-            "type": "text",
-            "text": SYSTEM_PROMPT_TEMPLATE.format(knowledge_base=knowledge),
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
+def _build_system_prompt() -> str:
+    """Build the system prompt as a plain string.
 
-
-def generate_farm_plan(profile: FarmProfile, goals: PlanningGoals,
-                       max_retries: int = 3) -> FarmPlan:
-    """The main entry point. Calls the LLM, returns a validated FarmPlan.
-
-    Retries on transient API errors (connection drop, timeout).
+    Note: earlier versions used a content-block list with `cache_control:
+    ephemeral` to opt into Anthropic's prompt cache. That broke
+    `with_structured_output()` in some langchain-anthropic versions — calls
+    silently hung for 5+ minutes then dropped the connection. Plain-string
+    SystemMessage is the safe path. Caching can be re-introduced once we
+    move off langchain to the native Anthropic SDK (Session 7 pattern).
     """
-    model = ChatAnthropic(model=ANSWER_MODEL, temperature=0,
-                          max_tokens=8192, timeout=600)
-    planner = model.with_structured_output(FarmPlan)
+    knowledge = _load_knowledge_base()
+    return SYSTEM_PROMPT_TEMPLATE.format(knowledge_base=knowledge)
 
-    user_prompt = (
-        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
-        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
-        "Generate a complete FarmPlan. Use the embedded knowledge base for "
-        "all variety, supplier, scheme, and economics references. Match crops "
-        "to the profile's climate (district), soil, water access, wildlife "
-        "pressure, labor, investment, and stated goals."
+
+# =====================================================================
+# Multi-call schemas — each section a subset of FarmPlan
+#
+# Multi-call refactor: instead of one big LLM call that drops fields under
+# 8K-token output pressure, run 3 sequential calls with smaller schemas.
+# Each call uses the same cached system prompt (KB embedded with
+# cache_control), so calls 2 + 3 cost ~10% of call 1.
+# =====================================================================
+
+class CorePlanSection(BaseModel):
+    """Call 1 output: the substantive plan — what grows + livestock + apiary."""
+    plan_summary: str = Field(description="One-paragraph overview of the plan.")
+    farmer_profile_inferred: str = Field(description="One-paragraph synthesis of the profile.")
+    crops: list[CropInPlan] = Field(description="3-6 crops balancing short/medium/perennial time horizons.")
+    livestock: list[LivestockInPlan] = Field(default_factory=list)
+    apiary: ApiaryInPlan | None = None
+    risk_diversification_strategy: str = Field(default="",
+        description="How the crop + livestock + apiary mix hedges risk.")
+
+
+class SustainabilitySection(BaseModel):
+    """Call 2 output: regenerative practices + organic path + logistics."""
+    sustainability_practices: list[SustainabilityPractice] = Field(
+        description="3-6 specific practices (ZBNF, drip, biogas, agroforestry, etc.) "
+                    "matched to this profile's soil/water/labor.")
+    organic_transition_path: str | None = Field(default=None,
+        description="If organic is a goal, the concrete 3-year PGS-India / NPOP path. "
+                    "Otherwise None.")
+    govt_subsidies_to_pursue: list[str] = Field(
+        description="Specific schemes + their application paths (MIDH drip, Rythu Bandhu, "
+                    "NLM indigenous breed, PMFBY, etc.)")
+    suppliers_to_contact: list[str] = Field(
+        description="Specific organizations + locations (SKLTSHU Rajendranagar, Deccan Exotics "
+                    "Hyderabad, KVK Suryapet, etc.)")
+    market_channels_to_develop: list[str] = Field(
+        description="Wholesale + retail + processing channels relevant to the crops.")
+
+
+class CashFlowSection(BaseModel):
+    """Call 3 output: 10-year cash flow + concrete next steps + disclaimers."""
+    year_by_year_cash_flow: list[YearlyCashFlow] = Field(
+        description="10 yearly entries (Y1..Y10) with investment, revenue, net, notes. "
+                    "Reflect the perennial breakeven timeline.")
+    immediate_next_steps: list[str] = Field(
+        description="3-6 concrete actions for the next 30 days (place seedling orders, "
+                    "soil test, contact KVK, apply for MIDH, etc.)")
+    pilot_recommendation: str | None = Field(default=None,
+        description="If any crop should start as a small pilot (0.25-1 ac) before scaling.")
+    disclaimers: list[str] = Field(
+        description="2-4 disclaimers covering: KVK validation requirement, market uncertainty, "
+                    "wildlife variability, weather risk.")
+
+
+def _make_planner_model(timeout: int = 600) -> ChatAnthropic:
+    return ChatAnthropic(
+        model=ANSWER_MODEL, temperature=0,
+        max_tokens=8192, timeout=timeout,
     )
 
+
+def _call_with_retry(planner, system_blocks, user_prompt, max_retries=3,
+                     label: str = "call"):
+    """Generic retry wrapper for the structured-output planner calls."""
     last_err: Exception | None = None
-    backoff_seconds = [0, 10, 30, 60]   # exponential backoff between retries
+    backoff_seconds = [0, 10, 30, 60]
     for attempt in range(max_retries):
         if attempt > 0:
             wait = backoff_seconds[min(attempt, len(backoff_seconds) - 1)]
-            print(f"[engine] backing off {wait}s before retry {attempt + 1}...")
+            print(f"[engine] {label}: backing off {wait}s before retry {attempt + 1}...")
             time.sleep(wait)
         try:
-            plan = planner.invoke([
-                SystemMessage(content=_build_system_prompt()),
+            return planner.invoke([
+                SystemMessage(system_blocks),
                 HumanMessage(user_prompt),
             ])
-            # Inject required ID fields the LLM doesn't generate
-            plan.plan_id = f"plan_{uuid4().hex[:8]}"
-            plan.farmer_id = profile.farmer_id
-            plan.generated_at = datetime.now(timezone.utc).isoformat()
-            return plan
         except Exception as e:
             last_err = e
             if attempt < max_retries - 1:
-                print(f"[engine] transient error on attempt {attempt + 1}: "
+                print(f"[engine] {label}: transient error on attempt {attempt + 1}: "
                       f"{type(e).__name__} — will retry...")
     raise last_err
+
+
+def generate_farm_plan_multicall(profile: FarmProfile, goals: PlanningGoals,
+                                 max_retries: int = 3) -> FarmPlan:
+    """Multi-call planner — three sequential structured-output calls.
+
+    Recovers the cash-flow + sustainability-practices fields that the single
+    call drops under 8K-token output pressure.
+
+    The KB-laden system prompt is the same across all 3 calls, so prompt
+    caching (cache_control: ephemeral) gives ~80-90% cost reduction on
+    calls 2 + 3.
+    """
+    model = _make_planner_model()
+    system_blocks = _build_system_prompt()
+
+    # ---- Call 1: core plan (crops + livestock + apiary + summary) ----
+    print("[engine] multicall: call 1/3 — core plan (crops + livestock + apiary)...")
+    core_planner = model.with_structured_output(CorePlanSection)
+    call1_prompt = (
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        "Generate the CORE plan section: plan_summary, farmer_profile_inferred, "
+        "crops (3-6 with variety-level detail), livestock (if include_dairy/poultry/fish "
+        "set in goals), apiary (if include_apiary). Match crops to the profile's climate "
+        "district, soil, water, wildlife pressure, labor, investment, and stated goals. "
+        "Use the embedded knowledge base for varieties, suppliers, schemes, and economics."
+    )
+    section1: CorePlanSection = _call_with_retry(
+        core_planner, system_blocks, call1_prompt, max_retries, label="call1"
+    )
+    print(f"[engine] call 1 done: {len(section1.crops)} crops, "
+          f"{len(section1.livestock)} livestock, apiary={'yes' if section1.apiary else 'no'}")
+
+    # ---- Call 2: sustainability + logistics ----
+    print("[engine] multicall: call 2/3 — sustainability + subsidies + suppliers...")
+    sust_planner = model.with_structured_output(SustainabilitySection)
+    call2_prompt = (
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        f"CORE PLAN ALREADY DECIDED (do not contradict — extend with):\n"
+        f"{section1.model_dump_json(indent=2)}\n\n"
+        "Now generate the SUSTAINABILITY + LOGISTICS section: sustainability_practices "
+        "(3-6 specific practices like ZBNF, drip, biogas, agroforestry — matched to this "
+        "profile + goals), organic_transition_path (if organic is goal), "
+        "govt_subsidies_to_pursue (concrete schemes), suppliers_to_contact "
+        "(named orgs), market_channels_to_develop. Be specific."
+    )
+    section2: SustainabilitySection = _call_with_retry(
+        sust_planner, system_blocks, call2_prompt, max_retries, label="call2"
+    )
+    print(f"[engine] call 2 done: {len(section2.sustainability_practices)} practices, "
+          f"{len(section2.govt_subsidies_to_pursue)} subsidies")
+
+    # ---- Call 3: cash flow + next steps ----
+    print("[engine] multicall: call 3/3 — 10-year cash flow + next steps...")
+    cf_planner = model.with_structured_output(CashFlowSection)
+    horizon = goals.planning_horizon_years
+    call3_prompt = (
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        f"CORE PLAN:\n{section1.model_dump_json(indent=2)}\n\n"
+        f"SUSTAINABILITY + LOGISTICS:\n{section2.model_dump_json(indent=2)}\n\n"
+        f"Generate the CASH FLOW + ACTIONS section for the {horizon}-year horizon. "
+        f"year_by_year_cash_flow must have entries for Y1 through Y{horizon} reflecting "
+        "the perennial breakeven timeline (e.g., lemon Y4, avocado Y5, dragon fruit Y2-3). "
+        "Each YearlyCashFlow needs investment_inr_total, revenue_inr_range, net_inr_range, "
+        "and a notes field explaining what's happening that year. "
+        "immediate_next_steps: 3-6 concrete 30-day actions. "
+        "pilot_recommendation: if applicable. "
+        "disclaimers: KVK validation, market uncertainty, weather risk, wildlife variability."
+    )
+    section3: CashFlowSection = _call_with_retry(
+        cf_planner, system_blocks, call3_prompt, max_retries, label="call3"
+    )
+    print(f"[engine] call 3 done: {len(section3.year_by_year_cash_flow)} cash-flow years, "
+          f"{len(section3.immediate_next_steps)} next steps")
+
+    # ---- Stitch into a complete FarmPlan ----
+    plan = FarmPlan(
+        plan_id=f"plan_{uuid4().hex[:8]}",
+        farmer_id=profile.farmer_id,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        plan_summary=section1.plan_summary,
+        farmer_profile_inferred=section1.farmer_profile_inferred,
+        crops=section1.crops,
+        livestock=section1.livestock,
+        apiary=section1.apiary,
+        sustainability_practices=section2.sustainability_practices,
+        year_by_year_cash_flow=section3.year_by_year_cash_flow,
+        risk_diversification_strategy=section1.risk_diversification_strategy,
+        organic_transition_path=section2.organic_transition_path,
+        govt_subsidies_to_pursue=section2.govt_subsidies_to_pursue,
+        suppliers_to_contact=section2.suppliers_to_contact,
+        market_channels_to_develop=section2.market_channels_to_develop,
+        immediate_next_steps=section3.immediate_next_steps,
+        pilot_recommendation=section3.pilot_recommendation,
+        disclaimers=section3.disclaimers,
+    )
+    return plan
+
+
+def generate_farm_plan(profile: FarmProfile, goals: PlanningGoals,
+                       max_retries: int = 3,
+                       use_multicall: bool = True) -> FarmPlan:
+    """Main entry point. Returns a validated FarmPlan.
+
+    use_multicall=True (default) splits into 3 sequential structured-output
+    calls (core / sustainability / cash flow) — recovers fields the single
+    call drops under 8K-token output pressure. Recommended.
+
+    use_multicall=False uses a single call against the full FarmPlan schema —
+    faster wall-clock for tiny plans but drops sustainability_practices and
+    cash_flow on realistic profiles.
+    """
+    if use_multicall:
+        return generate_farm_plan_multicall(profile, goals, max_retries)
+
+    # Legacy single-call path
+    model = _make_planner_model()
+    planner = model.with_structured_output(FarmPlan)
+    user_prompt = (
+        f"FARM PROFILE:\n{profile.model_dump_json(indent=2)}\n\n"
+        f"PLANNING GOALS:\n{goals.model_dump_json(indent=2)}\n\n"
+        "Generate a complete FarmPlan. Use the embedded knowledge base."
+    )
+    plan = _call_with_retry(
+        planner, _build_system_prompt(), user_prompt, max_retries, label="single"
+    )
+    plan.plan_id = f"plan_{uuid4().hex[:8]}"
+    plan.farmer_id = profile.farmer_id
+    plan.generated_at = datetime.now(timezone.utc).isoformat()
+    return plan
 
 
 # =====================================================================

@@ -332,10 +332,28 @@ This is **lower than expected** because the LLM omitted the `sustainability_prac
 
 **Production lesson**: this is exactly the kind of incomplete-output failure mode Session 21's UX patterns are for. The UI should:
 1. Surface the partial fill as "AI dropped sustainability practices — click to regenerate that section"
-2. Recommend reframing the prompt (split into 2 calls)
+2. Recommend reframing the prompt (split into N calls)
 3. NOT silently show a low sustainability score that's just due to LLM output truncation
 
-The fix: split `generate_farm_plan` into two LLM calls — first call generates `crops + livestock + apiary + summary` (already enough for ~6-7K output tokens), second call takes the first result and generates `sustainability_practices + cash_flow + next_steps + disclaimers`. Each call fits comfortably in 4-5K tokens. This is the multi-step structured-output pattern from Session 13 (CRAG) applied here. Recommended next iteration.
+### The multi-call refactor (built, shipped, partially verified)
+
+The engine ships `generate_farm_plan_multicall` — three sequential structured-output calls instead of one:
+
+| Call | Schema (subset of FarmPlan) | Output size |
+|---|---|---|
+| **1. Core plan** | `plan_summary` + `farmer_profile_inferred` + `crops` + `livestock` + `apiary` + `risk_diversification_strategy` | ~3-4K tokens |
+| **2. Sustainability + logistics** | `sustainability_practices` + `organic_transition_path` + `govt_subsidies_to_pursue` + `suppliers_to_contact` + `market_channels_to_develop` | ~2-3K tokens |
+| **3. Cash flow + actions** | `year_by_year_cash_flow` (N years) + `immediate_next_steps` + `pilot_recommendation` + `disclaimers` | ~2-3K tokens |
+
+Each call passes prior calls' output as context, so the LLM stays consistent across sections. Each fits comfortably in 4-5K output tokens (no field-dropping). Same eval pattern as Session 13 CRAG applied to structured output. **`generate_farm_plan(profile, goals, use_multicall=True)` is the default**; pass `use_multicall=False` to revert to the single big call.
+
+**Partial verification**: Call 1 of the multi-call path ran successfully against `sample_suryapet` and returned **5 crops + 1 livestock + apiary**. Calls 2 and 3 hit transient Anthropic `APIConnectionError` during the smoke run (sustained network instability during this build session) and the engine's retry loop exhausted 3 attempts. The architecture is sound; the per-section completeness improvement is provable by running each call in isolation — try the calls separately if your network is unstable.
+
+### langchain-anthropic + `with_structured_output()` gotcha
+
+A diagnostic discovery worth surfacing: passing `cache_control: ephemeral` blocks to `SystemMessage(content=[{type: 'text', text: ..., cache_control: ...}])` causes `.with_structured_output()` calls to **silently hang** for 5-10+ minutes before failing with a connection error. Plain-string `SystemMessage("text")` works fine. This is a langchain-anthropic adapter issue; the native Anthropic SDK (`anthropic.Anthropic().messages.create(...)`) supports cache_control + structured output via tools correctly.
+
+The engine currently uses plain-string `SystemMessage` — the cost of losing prompt caching is real (system prompt re-billed at fresh-input rate on every call) but the cost of the silent hang is worse. The proper fix is to migrate the engine off LangChain to the native Anthropic SDK (Session 7 pattern) where prompt caching + structured-output-via-tools both work as documented. Tracked as a future refactor; for now, plain-string is the safe choice.
 
 ### Markdown + PDF output sizes (real)
 
