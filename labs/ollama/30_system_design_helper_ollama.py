@@ -122,7 +122,7 @@ document covering:
   - likely interviewer follow-up questions
 
 Style: senior IC voice. Specific numbers, not hand-waving. Cite real models
-(claude-sonnet-4-6, claude-haiku-4-5), real services (Anthropic, Pinecone,
+(llama3.2, llama3.2:3b), real services (Ollama, Pinecone,
 Datadog, Fly, AWS), real algorithms (BM25 + RRF, CRAG). If a trade-off has
 a clear best answer for the scenario, recommend it explicitly — don't hedge.
 
