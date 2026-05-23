@@ -1247,6 +1247,8 @@ def stream_plan_via_graph(profile: FarmProfile, goals: PlanningGoals,
                           thread_id: str | None = None):
     """Generator yielding per-node events for UI streaming progress."""
     checkpointer = _get_checkpointer()
+    if checkpointer is None:
+        raise RuntimeError("langgraph not installed — `pip install langgraph`")
     with checkpointer as cp:
         graph = build_planner_graph(checkpointer=cp)
         thread_id = thread_id or f"plan_{uuid4().hex[:8]}"
