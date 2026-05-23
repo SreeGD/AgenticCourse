@@ -298,7 +298,7 @@ def safe_chat(user_input: str, thread_id: str) -> dict:
         _print_guard("input", name, r)
         if not r.passed:
             return {"answer": f"[REFUSED by {name}] {r.reason}",
-                    "tokens": (0, 0, 0, 0), "tool_calls": [], "refused": True}
+                    "tokens": (0, 0, 0), "tool_calls": [], "refused": True}
 
     print("\n  ─ AGENT INVOKE ─")
     config = {"configurable": {"thread_id": thread_id}}
@@ -310,7 +310,7 @@ def safe_chat(user_input: str, thread_id: str) -> dict:
     # Gather tool calls + retrieved context + tokens this turn
     tool_calls_made = []
     retrieved_text = ""
-    in_tok = out_tok = cache_read = cache_create = 0
+    in_tok = out_tok = cache_read = 0
     for m in new_messages:
         if isinstance(m, AIMessage):
             if m.tool_calls:
@@ -331,22 +331,22 @@ def safe_chat(user_input: str, thread_id: str) -> dict:
     _print_guard("output", "OutputPII", pii_out)
     if not pii_out.passed:
         return {"answer": f"[BLOCKED OUTPUT] {pii_out.reason}",
-                "tokens": (in_tok, out_tok, cache_read, cache_create),
+                "tokens": (in_tok, out_tok, cache_read),
                 "tool_calls": tool_calls_made, "refused": True}
 
     faith = guard_faithfulness(retrieved_text, answer)
     _print_guard("output", "Faithfulness", faith)
     if not faith.passed:
         return {"answer": f"[BLOCKED OUTPUT] {faith.reason}",
-                "tokens": (in_tok, out_tok, cache_read, cache_create),
+                "tokens": (in_tok, out_tok, cache_read),
                 "tool_calls": tool_calls_made, "refused": True}
 
-    return {"answer": answer, "tokens": (in_tok, out_tok, cache_read, cache_create),
+    return {"answer": answer, "tokens": (in_tok, out_tok, cache_read),
             "tool_calls": tool_calls_made, "refused": False}
 
 
-def cost_usd(in_tok, out_tok, cache_read, cache_create=0):
-    """gpt-4o pricing: $2.50/M input, $10.00/M output, $1.25/M cache_read (no separate cache_creation cost)."""
+def cost_usd(in_tok, out_tok, cache_read):
+    """gpt-4o pricing: $2.50/M input, $10.00/M output, $1.25/M cache_read."""
     fresh = max(0, in_tok - cache_read)
     return (fresh * 2.5 + out_tok * 10 + cache_read * 1.25) / 1_000_000
 
@@ -372,10 +372,10 @@ for i, q in enumerate(turns, start=1):
     r = safe_chat(q, thread_id=THREAD)
     results.append((q, r))
 
-    in_tok, out_tok, cache_read, cache_create = r["tokens"]
+    in_tok, out_tok, cache_read = r["tokens"]
     print(f"\n  ─ TOKENS ─")
-    print(f"    input={in_tok}  output={out_tok}  cache_read={cache_read}  cache_create={cache_create}")
-    print(f"    cost ≈ ${cost_usd(in_tok, out_tok, cache_read, cache_create):.6f}")
+    print(f"    input={in_tok}  output={out_tok}  cache_read={cache_read}")
+    print(f"    cost ≈ ${cost_usd(in_tok, out_tok, cache_read):.6f}")
     print(f"\n  ─ ANSWER ─")
     print(f"    {r['answer'][:400]}{'...' if len(r['answer']) > 400 else ''}")
 
@@ -387,27 +387,26 @@ for i, q in enumerate(turns, start=1):
 print("\n" + "=" * 72)
 print("FINAL SUMMARY — 4-turn conversation")
 print("=" * 72)
-print(f"\n{'turn':<5} {'in':>6} {'out':>5} {'c.read':>7} {'c.create':>9} "
+print(f"\n{'turn':<5} {'in':>6} {'out':>5} {'c.read':>7} "
       f"{'cost':>9}  {'tools':<14} {'status'}")
-print("-" * 72)
+print("-" * 62)
 
-total_in = total_out = total_cread = total_ccreate = 0
+total_in = total_out = total_cread = 0
 total_cost = 0.0
 for i, (q, r) in enumerate(results, start=1):
-    in_tok, out_tok, c_read, c_create = r["tokens"]
-    c = cost_usd(in_tok, out_tok, c_read, c_create)
+    in_tok, out_tok, c_read = r["tokens"]
+    c = cost_usd(in_tok, out_tok, c_read)
     total_in += in_tok
     total_out += out_tok
     total_cread += c_read
-    total_ccreate += c_create
     total_cost += c
     tools = ",".join(r["tool_calls"]) or "-"
     status = "REFUSED" if r["refused"] else "OK"
-    print(f"{i:<5} {in_tok:>6} {out_tok:>5} {c_read:>7} {c_create:>9} "
+    print(f"{i:<5} {in_tok:>6} {out_tok:>5} {c_read:>7} "
           f"${c:>8.6f}  {tools:<14} {status}")
 
-print("-" * 72)
-print(f"{'TOTAL':<5} {total_in:>6} {total_out:>5} {total_cread:>7} {total_ccreate:>9} "
+print("-" * 62)
+print(f"{'TOTAL':<5} {total_in:>6} {total_out:>5} {total_cread:>7} "
       f"${total_cost:>8.6f}")
 
 if total_in > 0:
