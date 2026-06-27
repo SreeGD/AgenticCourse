@@ -63,6 +63,19 @@ For most real questions you want both opinions, then merge. Hybrid RAG is asking
 
 ## Visual
 
+```mermaid
+flowchart TD
+    Q[User Query] --> D[Dense\nEmbedding]
+    Q --> S[Sparse\nBM25]
+    Q --> H[HyDE: Claude\ngenerates hypothetical answer]
+    H --> HE[Embed\nhypothetical answer]
+    D --> RRF[RRF\nFusion]
+    S --> RRF
+    HE --> RRF
+    RRF --> TOP[Top-k Chunks]
+    TOP --> GEN[Claude\nGenerate Answer]
+```
+
 ```
    query
      │

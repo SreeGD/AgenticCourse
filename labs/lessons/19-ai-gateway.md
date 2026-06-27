@@ -56,6 +56,17 @@ LiteLLM is the power strip. Claude, GPT, Gemini, Mistral, Bedrock are the suppli
 
 ## Visual
 
+```mermaid
+flowchart LR
+    APP[Your App] --> GW[AI Gateway\nLiteLLM / portkey / Kong]
+    GW -->|primary| ANT[Anthropic\nClaude]
+    GW -->|fallback| OAI[OpenAI\nGPT-4o]
+    GW -->|cost route| GRQ[groq\nLlama 3]
+    GW -->|self-host| OLL[Ollama\nlocal]
+    GW --- CACHE[(Semantic Cache)]
+    GW --- LOG[Observability\nLangfuse / LangSmith]
+```
+
 ```
                     YOUR APP CODE
                           │

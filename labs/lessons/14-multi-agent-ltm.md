@@ -68,6 +68,18 @@ Short-term memory is the conversation you have during today's appointment. Long-
 
 ## Visual — Multi-agent
 
+```mermaid
+flowchart TD
+    U[User] --> SUP[Supervisor Agent]
+    SUP -->|route| R[Researcher]
+    SUP -->|route| W[Writer]
+    SUP -->|route| V[Validator]
+    R --> M[(Long-term Memory\nVector Store)]
+    W --> M
+    V --> SUP
+    SUP --> U
+```
+
 ```
                   ┌──────────────────────┐
                   │     SUPERVISOR       │  ReAct agent

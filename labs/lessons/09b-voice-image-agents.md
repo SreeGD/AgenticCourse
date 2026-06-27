@@ -24,6 +24,19 @@ This session builds that pipeline in two flavors:
 
 ## 1. Pipeline Architecture
 
+```mermaid
+flowchart LR
+    A[Audio File] --> STT[STT\nWhisper / Replicate]
+    STT --> T[Transcription]
+    T --> C[Claude\nRefine Prompt]
+    C --> RP[Refined Prompt]
+    RP --> IG[Image Gen\nDALL-E 3 / Flux Pro]
+    IG --> IMG[Image URL]
+    IMG --> CV[Claude Vision\nDescribe]
+    CV --> TTS[TTS\nOpenAI / ElevenLabs]
+    TTS --> AF[Audio Output]
+```
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  INPUT: audio file (.wav / .mp3)                                │

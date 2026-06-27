@@ -77,6 +77,21 @@ async def ask_async(prompt: str) -> str:
 
 ## 2. FastAPI + Pydantic Anatomy
 
+```mermaid
+flowchart LR
+    C[Client] -->|POST /chat| FA[FastAPI\n00b_engineering_foundations]
+    FA --> CL[Claude\nAnthropicSDK]
+    FA --> PG[(Postgres\n+ pgvector)]
+    PG -->|similarity_search| FA
+    CL --> FA
+    FA -->|ChatResponse| C
+
+    subgraph Docker Compose
+        FA
+        PG
+    end
+```
+
 ### Request Lifecycle
 
 ```

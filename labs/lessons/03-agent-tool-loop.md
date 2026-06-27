@@ -60,6 +60,25 @@ The chef never operates the kitchen equipment. She just *proposes* actions on ti
 
 ## Visual
 
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Claude
+    participant Tools
+
+    User->>Agent: message
+    loop Tool call cycle
+        Agent->>Claude: messages + tool_schemas
+        Claude-->>Agent: tool_use blocks
+        Agent->>Tools: dispatch (parallel via asyncio)
+        Tools-->>Agent: tool_result blocks
+        Agent->>Claude: append results
+        Claude-->>Agent: text (stop_reason=end_turn)
+    end
+    Agent-->>User: final response
+```
+
 ```
          ┌──────────────────────────────────────────────────┐
          │  Your code (the LLM Client / sous-chef)          │

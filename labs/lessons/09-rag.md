@@ -56,6 +56,20 @@ The LLM is the expert reader. The vector store is the card catalog. The retrieve
 
 ## Visual
 
+```mermaid
+flowchart LR
+    D[Documents] --> S[Split\nChunker]
+    S --> E[Embed\nall-MiniLM]
+    E --> VS[(Vector Store)]
+    Q[User Query] --> QE[Embed Query]
+    QE --> VS
+    VS -->|top-k| R[Retrieved Chunks]
+    R --> P[Prompt Builder]
+    Q --> P
+    P --> C[Claude]
+    C --> A[Answer]
+```
+
 ```
 INDEXING (done once at startup):
    raw docs  ──► Loader ──► Documents

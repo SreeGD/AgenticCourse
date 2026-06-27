@@ -30,6 +30,20 @@ you need to make smart decisions about models, context budgets, and sampling.
 
 ## The 7 Building Blocks
 
+```mermaid
+flowchart LR
+    P[Prompt] --> T[Tokenizer\nBPE]
+    T --> KV[KV Cache\ncheck]
+    KV -->|cache hit| SK[Skip\nPrefill]
+    KV -->|cache miss| PF[Prefill\nattention layers]
+    SK --> S[Sampling\ntemp · top-p · top-k]
+    PF --> S
+    S -->|next token| DEC[Decode\nautoregressively]
+    DEC -->|EOS| OUT[Output Tokens]
+    OUT --> DT[Detokenizer]
+    DT --> R[Response Text]
+```
+
 ### 1. Transformers
 
 A transformer predicts the next token by attending to all prior tokens simultaneously.

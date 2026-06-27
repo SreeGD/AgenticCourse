@@ -78,6 +78,44 @@ Plus:
 
 See [`labs/CURRICULUM.md`](labs/CURRICULUM.md) for the full session-by-session plan.
 
+```mermaid
+flowchart LR
+    T0["Track 0\nFoundations\nS00, S00b, S02b"]
+    TA["Track A\nAgentic Systems\nS1–S3, S6"]
+    TB["Track B\nRAG Systems\nS9, S9b, S11–S13"]
+    TC["Track C\nInfrastructure\nS7, S7b, S8, S8b"]
+    TD["Track D\nWorkflow & Skill\nS4, S5, S6"]
+    TE["Track E\nSafety & Governance\nS10, S19, S20"]
+    TF["Track F\nProduction\nS14–S17"]
+    TG["Track G\nArchitect Skills\nS18, S21, S21b"]
+
+    T0 --> TA & TC
+    TA --> TB & TE
+    TC --> TF
+    TB --> TF
+    TE --> TF
+    TF --> TG
+```
+
+```mermaid
+graph TD
+    subgraph "2026 AI Engineer Roadmap — All 13 Categories Covered"
+        C01["01 LLM Fundamentals ✅\nS00"]
+        C02["02 Prompt Engineering ✅\nS02b"]
+        C03["03 RAG Systems ✅\nS9,S11–S13"]
+        C04["04 Agentic Systems ✅\nS1–S3,S6"]
+        C05["05 AI Gateways ✅\nS8,S19"]
+        C06["06 Guardrails ✅\nS10,S19,S20"]
+        C07["07 Observability ✅\nS14,S17,S25"]
+        C08["08 Production ✅\nS15–S17"]
+        C09["09 SWE Essentials ✅\nS00b"]
+        C10["10 Inference ✅\nS08b"]
+        C11["11 Multimodal ✅\nS09b"]
+        C12["12 Ecosystem ✅\nS07b"]
+        C13["13 Career ✅\nS21b"]
+    end
+```
+
 ---
 
 ## Quick start
