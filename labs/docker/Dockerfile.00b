@@ -1,0 +1,21 @@
+# Session 00b — multi-stage build keeps the final image lean.
+# Layer order matters: deps before code so cache is reused on code-only changes.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Layer 1: system build tools (rarely changes)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Layer 2: Python deps (changes when packages change)
+RUN pip install --no-cache-dir fastapi uvicorn anthropic python-dotenv
+
+# Layer 3: application code (changes most often)
+COPY labs/00b_engineering_foundations.py .
+
+EXPOSE 8000
+
+# main() calls uvicorn.run — so we just execute the module
+CMD ["python", "00b_engineering_foundations.py"]
