@@ -1,6 +1,7 @@
 """Shared pytest fixtures for AgenticCourse test suite."""
 import importlib.util
 import sys
+import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -11,7 +12,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "labs"))
 
 
-def load_lab(filename: str):
+def load_lab(filename: str) -> types.ModuleType:
     """Load a lab module from labs/<filename>.py regardless of digit prefix.
 
     Args:
